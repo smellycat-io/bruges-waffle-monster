@@ -1,0 +1,21 @@
+{
+    "name": "BrugesWaffleMonster.Player.PlayModeTests",
+    "rootNamespace": "BrugesWaffleMonster.Player.Tests",
+    "references": [
+        "BrugesWaffleMonster.Runtime",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": []
+}
