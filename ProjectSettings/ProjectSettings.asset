@@ -589,7 +589,8 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   webProgressiveAssetLoading: 0
-  scriptingDefineSymbols: {}
+  scriptingDefineSymbols:
+    Standalone: SENTIS_ANALYTICS_ENABLED;APP_UI_EDITOR_ONLY
   additionalCompilerArguments: {}
   platformArchitecture: {}
   scriptingBackend:
@@ -693,7 +694,7 @@ PlayerSettings:
   cloudProjectId: a829b628-0e67-4f59-a9d1-8c36c5f0f608
   framebufferDepthMemorylessMode: 0
   qualitySettingsNames: []
-  projectName: bruges-waffle-monster-mobile-game
+  projectName: My project
   organizationId: elisebassett
   cloudEnabled: 0
   legacyClampBlendShapeWeights: 0
