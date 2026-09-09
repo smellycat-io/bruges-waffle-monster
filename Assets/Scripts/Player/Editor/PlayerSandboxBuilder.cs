@@ -8,8 +8,9 @@ namespace BrugesWaffleMonster.Editor
 {
     /// <summary>
     /// One-shot editor helper that drops a throwaway, art-free sandbox into the open scene
-    /// so player movement can be exercised in Play mode: a placeholder monster, a floor, two
-    /// climbable walls, and the full-screen tap-zone input driver. Nothing here ships in a build.
+    /// so player movement can be exercised in Play mode: a placeholder monster (with the
+    /// tap-zone run/jump driver and the drag-to-climb driver), a floor, and two climbable
+    /// walls. Nothing here ships in a build.
     ///
     /// Run it from <b>Tools ▸ Bruges Waffle Monster ▸ Build Player Movement Sandbox</b>.
     /// It refuses to run twice (delete the "PlayerMovementSandbox" object to regenerate).
@@ -65,7 +66,8 @@ namespace BrugesWaffleMonster.Editor
             EditorSceneManager.MarkSceneDirty(scene);
             Debug.Log("Player movement sandbox built. Press Play — hold the LEFT / RIGHT half of the screen " +
                       "(or A/D) to run, quick-tap either half (or Space) to jump. Touch a translucent wall to " +
-                      "auto-climb; hold a direction to climb down; tap jump while climbing to wall-jump off.");
+                      "grab it, then drag up/down (or Up/Down arrows) to climb; release to hang. Quick-tap while " +
+                      "climbing to wall-jump off.");
         }
 
         [MenuItem(MenuPath, isValidateFunction: true)]
@@ -95,11 +97,16 @@ namespace BrugesWaffleMonster.Editor
 
             var tapInput = go.AddComponent<TapPlayerInput>();
             var zoneInput = go.AddComponent<ScreenTapZoneInput>();
+            var climbInput = go.AddComponent<ClimbDragInput>();
             var player = go.AddComponent<PlayerController>();
 
             var zoneSo = new SerializedObject(zoneInput);
             zoneSo.FindProperty("target").objectReferenceValue = tapInput;
             zoneSo.ApplyModifiedPropertiesWithoutUndo();
+
+            var climbSo = new SerializedObject(climbInput);
+            climbSo.FindProperty("target").objectReferenceValue = tapInput;
+            climbSo.ApplyModifiedPropertiesWithoutUndo();
 
             var playerSo = new SerializedObject(player);
             playerSo.FindProperty("config").objectReferenceValue = config;

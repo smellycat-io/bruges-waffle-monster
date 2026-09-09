@@ -9,8 +9,9 @@ using UnityEngine;
 ///
 /// Climbing:
 /// - Entering contact with a climbable surface grabs the wall automatically (no input).
-/// - With no run input held the player ascends; holding either run direction drives a
-///   vertical descent instead. Movement on the wall is strictly vertical — never lateral.
+/// - Vertical movement is driven entirely by <c>climbInput</c> (a signed hold-to-move
+///   value: +1 up, -1 down, 0 = hang in place). There is no auto-ascent and no residual
+///   velocity — release the input and the player stops. Movement is strictly vertical.
 /// - Pressing JUMP wall-jumps: the player kicks off into <see cref="PlayerMovementState.Airborne"/>
 ///   with a horizontal push away from the wall plus an upward impulse
 ///   (<see cref="IPlayerMovementConfig.WallJumpVelocity"/>).
@@ -59,11 +60,15 @@ public sealed class PlayerMovementController
     /// Advances the state machine one physics step and returns the velocity the body
     /// should have. <paramref name="currentVelocity"/> is the body's velocity going in
     /// (used to preserve vertical velocity under gravity while airborne, and horizontal
-    /// velocity while kicking away from a wall).
+    /// velocity while kicking away from a wall). <paramref name="horizontalInput"/> drives
+    /// run/steer on the ground and in the air; <paramref name="climbInput"/> (+1 up / -1
+    /// down / 0 hang) drives vertical movement while climbing. Each is ignored in the
+    /// state where it does not apply.
     /// </summary>
-    public Vector2 Tick(Vector2 currentVelocity, float horizontalInput)
+    public Vector2 Tick(Vector2 currentVelocity, float horizontalInput, float climbInput)
     {
         horizontalInput = Mathf.Clamp(horizontalInput, -1f, 1f);
+        climbInput = Mathf.Clamp(climbInput, -1f, 1f);
         bool holdingDirection = Mathf.Abs(horizontalInput) > Deadzone;
 
         bool groundJump = jumpQueued
@@ -78,9 +83,8 @@ public sealed class PlayerMovementController
         switch (State)
         {
             case PlayerMovementState.Climbing:
-                // Vertical only: automatic ascent, or descent while a run direction is held.
-                float climbSign = holdingDirection ? -1f : 1f;
-                return new Vector2(0f, climbSign * config.ClimbSpeed);
+                // Strictly vertical, hold-to-move: no climb input -> hang still (no residual).
+                return new Vector2(0f, climbInput * config.ClimbSpeed);
 
             case PlayerMovementState.Airborne:
                 if (wallJump)

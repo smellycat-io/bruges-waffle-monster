@@ -15,9 +15,11 @@ public class PlayerControllerPlayModeTests
     private sealed class StubInputSource : MonoBehaviour, IPlayerInputSource
     {
         public float horizontal;
+        public float climb;
         private bool jump;
 
         public float HorizontalAxis => horizontal;
+        public float ClimbAxis => climb;
 
         public void PressJump() => jump = true;
 
@@ -130,7 +132,7 @@ public class PlayerControllerPlayModeTests
     }
 
     [UnityTest]
-    public IEnumerator TouchingClimbableWall_EntersClimbAndMovesUp()
+    public IEnumerator TouchingClimbableWall_EntersClimbAndHangsWithNoInput()
     {
         CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
         var player = CreatePlayer(new Vector2(0f, 0.1f), out _);
@@ -142,7 +144,24 @@ public class PlayerControllerPlayModeTests
         yield return FixedSteps(30);
 
         Assert.AreEqual(PlayerMovementState.Climbing, player.State);
-        Assert.Greater(player.transform.position.y, startY + 0.5f, "Climb should carry the player upward with no input.");
+        Assert.AreEqual(startY, player.transform.position.y, 0.05f, "With no drag input the player just hangs on the wall.");
+    }
+
+    [UnityTest]
+    public IEnumerator DragUpWhileClimbing_Ascends()
+    {
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
+
+        yield return FixedSteps(10);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+
+        float startY = player.transform.position.y;
+        input.climb = 1f; // drag up
+        yield return FixedSteps(25);
+
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+        Assert.Greater(player.transform.position.y, startY + 0.5f, "Dragging up should carry the player up the wall.");
     }
 
     [UnityTest]
@@ -187,20 +206,40 @@ public class PlayerControllerPlayModeTests
     }
 
     [UnityTest]
-    public IEnumerator HoldingADirectionWhileClimbing_DrivesADescent()
+    public IEnumerator DragDownWhileClimbing_Descends_AndReleaseStops()
     {
-        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 12f), climbable: true, asTrigger: true);
         var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
 
         yield return FixedSteps(15);
         Assert.AreEqual(PlayerMovementState.Climbing, player.State);
 
         float beforeY = player.transform.position.y;
-        input.horizontal = 1f; // hold a run direction
+        input.climb = -1f; // drag down
+        yield return FixedSteps(20);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State, "Dragging must not leave the wall.");
+        Assert.Less(player.transform.position.y, beforeY - 0.5f, "Dragging down moves the player down the wall.");
+
+        float afterDescentY = player.transform.position.y;
+        input.climb = 0f; // release
+        yield return FixedSteps(15);
+        Assert.AreEqual(afterDescentY, player.transform.position.y, 0.05f, "Releasing the drag stops climbing immediately, no coast.");
+    }
+
+    [UnityTest]
+    public IEnumerator RunInputWhileClimbing_DoesNotMovePlayerSideways()
+    {
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
+
+        yield return FixedSteps(10);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+
+        float startX = player.transform.position.x;
+        input.horizontal = 1f; // run input is ignored while climbing
         yield return FixedSteps(20);
 
-        Assert.AreEqual(PlayerMovementState.Climbing, player.State, "Holding a direction must not leave the wall.");
-        Assert.Less(player.transform.position.y, beforeY, "Holding a direction should move the player DOWN the wall.");
+        Assert.AreEqual(startX, player.transform.position.x, 0.05f, "Run input must not push the player off the wall sideways.");
     }
 
     [UnityTest]

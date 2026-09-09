@@ -1,23 +1,17 @@
 using UnityEngine;
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-using UnityEngine.InputSystem.EnhancedTouch;
-using ETouch = UnityEngine.InputSystem.EnhancedTouch.Touch;
-#endif
 
 /// <summary>
 /// Full-screen tap-zone controls: hold the left half of the screen to run left, the right
 /// half to run right, and a quick tap on either half to jump. No visible UI.
 ///
-/// This only reads pointer position + duration and forwards intent to a <see cref="TapPlayerInput"/>
-/// through its existing Press/Release hooks — it does not touch TapPlayerInput or the
-/// movement state machine. All of the zone/timing logic lives in <see cref="TapZoneInterpreter"/>
-/// (unit-tested); this class is just the device adapter.
+/// This only reads pointer position + duration (via <see cref="PointerSampler"/>) and
+/// forwards intent to a <see cref="TapPlayerInput"/> through its existing Press/Release
+/// hooks — it does not touch TapPlayerInput or the movement state machine. The zone/timing
+/// logic lives in the unit-tested <see cref="TapZoneInterpreter"/>; this class is just the
+/// device adapter.
 /// </summary>
-public class ScreenTapZoneInput : MonoBehaviour, TapZoneInterpreter.ITarget
+public class ScreenTapZoneInput : MonoBehaviour, TapZoneInterpreter.ITarget, PointerSampler.IHandler
 {
-    private const int MousePointerId = -42;
-
     [SerializeField]
     [Tooltip("Receives the interpreted PressLeft/ReleaseLeft/... calls.")]
     private TapPlayerInput target;
@@ -30,26 +24,21 @@ public class ScreenTapZoneInput : MonoBehaviour, TapZoneInterpreter.ITarget
     [Tooltip("Fraction of the screen width that is the LEFT run zone; the remainder is the RIGHT zone.")]
     private float leftZoneFraction = 0.5f;
 
+    private readonly PointerSampler sampler = new PointerSampler();
     private TapZoneInterpreter interpreter;
+    private float frameTime;
 
     private void Awake()
     {
         interpreter = new TapZoneInterpreter(this, tapMaxDuration, leftZoneFraction);
     }
 
-    private void OnEnable()
-    {
-#if ENABLE_INPUT_SYSTEM
-        EnhancedTouchSupport.Enable();
-#endif
-    }
+    private void OnEnable() => sampler.Enable();
 
     private void OnDisable()
     {
         interpreter?.Reset();
-#if ENABLE_INPUT_SYSTEM
-        EnhancedTouchSupport.Disable();
-#endif
+        sampler.Disable();
     }
 
     private void Update()
@@ -59,65 +48,27 @@ public class ScreenTapZoneInput : MonoBehaviour, TapZoneInterpreter.ITarget
             return;
         }
 
-        float time = Time.unscaledTime;
-        float width = Screen.width;
+        frameTime = Time.unscaledTime;
+        sampler.Sample(this);
+        // Promote any press held past the tap threshold into a run hold.
+        interpreter.Tick(frameTime);
+    }
 
-#if ENABLE_INPUT_SYSTEM
-        foreach (ETouch touch in ETouch.activeTouches)
-        {
-            switch (touch.phase)
-            {
-                case UnityEngine.InputSystem.TouchPhase.Began:
-                    interpreter.PointerDown(touch.touchId, touch.screenPosition.x, width, time);
-                    break;
-                case UnityEngine.InputSystem.TouchPhase.Ended:
-                    interpreter.PointerUp(touch.touchId, time);
-                    break;
-                case UnityEngine.InputSystem.TouchPhase.Canceled:
-                    interpreter.PointerCancelled(touch.touchId);
-                    break;
-            }
-        }
+    void PointerSampler.IHandler.PointerDown(int pointerId, Vector2 screenPosition)
+        => interpreter.PointerDown(pointerId, screenPosition.x, Screen.width, frameTime);
 
-        Mouse mouse = Mouse.current;
-        if (mouse != null)
-        {
-            if (mouse.leftButton.wasPressedThisFrame)
-            {
-                interpreter.PointerDown(MousePointerId, mouse.position.ReadValue().x, width, time);
-            }
-            else if (mouse.leftButton.wasReleasedThisFrame)
-            {
-                interpreter.PointerUp(MousePointerId, time);
-            }
-        }
-#elif ENABLE_LEGACY_INPUT_MANAGER
-        for (int i = 0; i < Input.touchCount; i++)
-        {
-            Touch touch = Input.GetTouch(i);
-            if (touch.phase == UnityEngine.TouchPhase.Began)
-            {
-                interpreter.PointerDown(touch.fingerId, touch.position.x, width, time);
-            }
-            else if (touch.phase == UnityEngine.TouchPhase.Ended)
-            {
-                interpreter.PointerUp(touch.fingerId, time);
-            }
-            else if (touch.phase == UnityEngine.TouchPhase.Canceled)
-            {
-                interpreter.PointerCancelled(touch.fingerId);
-            }
-        }
+    void PointerSampler.IHandler.PointerMove(int pointerId, Vector2 screenPosition) { /* zones only care about down/up */ }
 
-        if (Input.GetMouseButtonDown(0))
+    void PointerSampler.IHandler.PointerUp(int pointerId, bool cancelled)
+    {
+        if (cancelled)
         {
-            interpreter.PointerDown(MousePointerId, Input.mousePosition.x, width, time);
+            interpreter.PointerCancelled(pointerId);
         }
-        else if (Input.GetMouseButtonUp(0))
+        else
         {
-            interpreter.PointerUp(MousePointerId, time);
+            interpreter.PointerUp(pointerId, frameTime);
         }
-#endif
     }
 
     void TapZoneInterpreter.ITarget.RunLeftPressed() => target.PressLeft();

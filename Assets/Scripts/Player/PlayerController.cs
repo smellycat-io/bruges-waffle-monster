@@ -78,7 +78,8 @@ public class PlayerController : MonoBehaviour
         movement.SetEnvironment(IsGrounded(), touchingClimbable, wallDirection);
 
         float horizontal = inputSource?.HorizontalAxis ?? 0f;
-        body.linearVelocity = movement.Tick(body.linearVelocity, horizontal);
+        float climb = inputSource?.ClimbAxis ?? 0f;
+        body.linearVelocity = movement.Tick(body.linearVelocity, horizontal, climb);
         body.gravityScale = movement.GravityActive ? config.GravityScale : 0f;
     }
 
