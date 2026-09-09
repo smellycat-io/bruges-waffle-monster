@@ -73,7 +73,9 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        movement.SetEnvironment(IsGrounded(), climbable.IsTouchingClimbable);
+        bool touchingClimbable = climbable.IsTouchingClimbable;
+        float wallDirection = touchingClimbable ? climbable.GetWallDirection(transform.position) : 0f;
+        movement.SetEnvironment(IsGrounded(), touchingClimbable, wallDirection);
 
         float horizontal = inputSource?.HorizontalAxis ?? 0f;
         body.linearVelocity = movement.Tick(body.linearVelocity, horizontal);

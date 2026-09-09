@@ -15,4 +15,5 @@ MonoBehaviour:
   runSpeed: 6
   jumpVelocity: 12
   climbSpeed: 3
+  wallJumpVelocity: {x: 8, y: 11}
   gravityScale: 3

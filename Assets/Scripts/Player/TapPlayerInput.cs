@@ -7,12 +7,11 @@ using UnityEngine.InputSystem;
 /// Tap-based <see cref="IPlayerInputSource"/>. Run is press-and-hold (hold the left/right
 /// control to run that way, release to stop); jump is a single tap.
 ///
-/// This component only exposes press/release hooks — it does not know or care whether they
-/// are driven by small on-screen buttons or by full-screen left/right tap zones. Wire
-/// either style to <see cref="PressLeft"/> / <see cref="ReleaseLeft"/> etc. (a
-/// <see cref="HoldButton"/> for the run controls, a plain Button for jump) and the layout
-/// can be swapped later without touching this class. The placeholder scene uses on-screen
-/// buttons — that is the intended default and is trivial to change.
+/// This component only exposes press/release hooks — it does not know or care what drives
+/// them. <see cref="ScreenTapZoneInput"/> (full-screen left/right hold-to-run zones plus
+/// tap-to-jump) is the default driver; anything else that calls <see cref="PressLeft"/> /
+/// <see cref="ReleaseLeft"/> etc. works the same way, so the control scheme can be swapped
+/// without touching this class or the movement state machine.
 /// </summary>
 public class TapPlayerInput : MonoBehaviour, IPlayerInputSource
 {

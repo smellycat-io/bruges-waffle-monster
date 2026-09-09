@@ -118,4 +118,44 @@ public class ClimbableContactTrackerTests
 
         Assert.IsFalse(tracker.IsTouchingClimbable, "A destroyed surface must not strand the player in climb.");
     }
+
+    [Test]
+    public void GetWallDirection_ReturnsZeroWhenNotTouchingAnything()
+    {
+        Assert.AreEqual(0f, tracker.GetWallDirection(Vector2.zero));
+    }
+
+    [Test]
+    public void GetWallDirection_PositiveWhenSurfaceIsToTheRight()
+    {
+        climbableObject.transform.position = new Vector3(5f, 0f, 0f);
+        tracker.RegisterContact(ColliderOn(climbableObject));
+
+        Assert.AreEqual(1f, tracker.GetWallDirection(Vector2.zero));
+    }
+
+    [Test]
+    public void GetWallDirection_NegativeWhenSurfaceIsToTheLeft()
+    {
+        climbableObject.transform.position = new Vector3(-5f, 0f, 0f);
+        tracker.RegisterContact(ColliderOn(climbableObject));
+
+        Assert.AreEqual(-1f, tracker.GetWallDirection(Vector2.zero));
+    }
+
+    [Test]
+    public void GetWallDirection_UsesTheNearestClimbableContact()
+    {
+        climbableObject.transform.position = new Vector3(-8f, 0f, 0f);
+        tracker.RegisterContact(ColliderOn(climbableObject));
+
+        var nearWall = new GameObject("NearWall");
+        nearWall.transform.position = new Vector3(2f, 0f, 0f);
+        nearWall.AddComponent<ClimbableSurface>();
+        tracker.RegisterContact(nearWall.AddComponent<BoxCollider2D>());
+
+        Assert.AreEqual(1f, tracker.GetWallDirection(Vector2.zero), "Nearer wall (right, +2) should win over the far one (left, -8).");
+
+        Object.DestroyImmediate(nearWall);
+    }
 }

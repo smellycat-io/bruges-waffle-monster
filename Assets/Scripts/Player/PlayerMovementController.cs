@@ -7,17 +7,26 @@ using UnityEngine;
 /// it environment facts and input intent, so all of the transition logic is unit-testable
 /// without a running scene.
 ///
-/// Climbing is fully automatic — while the owner reports contact with a climbable surface
-/// this stays in <see cref="PlayerMovementState.Climbing"/> and drives the body straight up
-/// at <see cref="IPlayerMovementConfig.ClimbSpeed"/>; no jump or directional input is needed
-/// to start, continue or (by leaving contact) end the climb.
+/// Climbing:
+/// - Entering contact with a climbable surface grabs the wall automatically (no input).
+/// - With no run input held the player ascends; holding either run direction drives a
+///   vertical descent instead. Movement on the wall is strictly vertical — never lateral.
+/// - Pressing JUMP wall-jumps: the player kicks off into <see cref="PlayerMovementState.Airborne"/>
+///   with a horizontal push away from the wall plus an upward impulse
+///   (<see cref="IPlayerMovementConfig.WallJumpVelocity"/>).
 /// </summary>
 public sealed class PlayerMovementController
 {
+    // Shared threshold: "is a run direction being held" (normalised input) and
+    // "is the body moving away from the wall" (world units/sec). Small enough that either
+    // reading is effectively "any real value".
+    private const float Deadzone = 0.01f;
+
     private readonly IPlayerMovementConfig config;
 
     private bool isGrounded = true;
     private bool isTouchingClimbable;
+    private float wallDirection;
     private bool jumpQueued;
 
     public PlayerMovementController(IPlayerMovementConfig config)
@@ -31,11 +40,16 @@ public sealed class PlayerMovementController
     /// <summary>Gravity should be applied by the body in every state except climbing.</summary>
     public bool GravityActive => State != PlayerMovementState.Climbing;
 
-    /// <summary>Latest environment facts from the owner, refreshed before each <see cref="Tick"/>.</summary>
-    public void SetEnvironment(bool grounded, bool touchingClimbable)
+    /// <summary>
+    /// Latest environment facts from the owner, refreshed before each <see cref="Tick"/>.
+    /// <paramref name="wallDirection"/> is +1 when the climbable surface is to the player's
+    /// right, -1 when it is to the left, 0 when there is no contact.
+    /// </summary>
+    public void SetEnvironment(bool grounded, bool touchingClimbable, float wallDirection = 0f)
     {
         isGrounded = grounded;
         isTouchingClimbable = touchingClimbable;
+        this.wallDirection = wallDirection;
     }
 
     /// <summary>Queues a single jump. Consumed on the next <see cref="Tick"/>; not buffered across steps.</summary>
@@ -44,42 +58,68 @@ public sealed class PlayerMovementController
     /// <summary>
     /// Advances the state machine one physics step and returns the velocity the body
     /// should have. <paramref name="currentVelocity"/> is the body's velocity going in
-    /// (used to preserve vertical velocity under gravity while airborne).
+    /// (used to preserve vertical velocity under gravity while airborne, and horizontal
+    /// velocity while kicking away from a wall).
     /// </summary>
     public Vector2 Tick(Vector2 currentVelocity, float horizontalInput)
     {
         horizontalInput = Mathf.Clamp(horizontalInput, -1f, 1f);
+        bool holdingDirection = Mathf.Abs(horizontalInput) > Deadzone;
 
-        // A jump only takes effect from a grounded stance that isn't being overridden by a climb.
-        bool jumpingThisStep = jumpQueued
+        bool groundJump = jumpQueued
             && State == PlayerMovementState.Grounded
             && isGrounded
             && !isTouchingClimbable;
+        bool wallJump = jumpQueued && State == PlayerMovementState.Climbing;
         jumpQueued = false;
 
-        State = ResolveNextState(jumpingThisStep);
+        State = ResolveNextState(currentVelocity, groundJump, wallJump);
 
         switch (State)
         {
             case PlayerMovementState.Climbing:
-                // Vertical only — no sideways drift or dismount while climbing (see design doc).
-                return new Vector2(0f, config.ClimbSpeed);
+                // Vertical only: automatic ascent, or descent while a run direction is held.
+                float climbSign = holdingDirection ? -1f : 1f;
+                return new Vector2(0f, climbSign * config.ClimbSpeed);
 
             case PlayerMovementState.Airborne:
-                float verticalVelocity = jumpingThisStep ? config.JumpVelocity : currentVelocity.y;
-                return new Vector2(horizontalInput * config.RunSpeed, verticalVelocity);
+                if (wallJump)
+                {
+                    // Kick off the wall: horizontal push away from it + an upward impulse.
+                    return new Vector2(-wallDirection * config.WallJumpVelocity.x, config.WallJumpVelocity.y);
+                }
+
+                // Reachable while touching a wall only when kicking away from it (a fresh
+                // wall-jump) — keep that horizontal push instead of zeroing it, until the
+                // player either steers or leaves the wall.
+                float airX = (isTouchingClimbable && !holdingDirection)
+                    ? currentVelocity.x
+                    : horizontalInput * config.RunSpeed;
+                float airY = groundJump ? config.JumpVelocity : currentVelocity.y;
+                return new Vector2(airX, airY);
 
             default: // Grounded
                 return new Vector2(horizontalInput * config.RunSpeed, currentVelocity.y);
         }
     }
 
-    private PlayerMovementState ResolveNextState(bool jumpingThisStep)
+    private PlayerMovementState ResolveNextState(Vector2 currentVelocity, bool groundJump, bool wallJump)
     {
-        // Contact with a climbable surface always wins, from any state, with no input.
+        if (wallJump)
+        {
+            return PlayerMovementState.Airborne;
+        }
+
         if (isTouchingClimbable)
         {
-            return PlayerMovementState.Climbing;
+            // Contact grabs the wall automatically — except immediately after a wall-jump,
+            // when we're airborne and still moving away from it (stops an instant re-grab).
+            bool kickingAwayFromWall = State == PlayerMovementState.Airborne
+                && currentVelocity.x * wallDirection < -Deadzone;
+            if (!kickingAwayFromWall)
+            {
+                return PlayerMovementState.Climbing;
+            }
         }
 
         switch (State)
@@ -89,7 +129,7 @@ public sealed class PlayerMovementController
                 return isGrounded ? PlayerMovementState.Grounded : PlayerMovementState.Airborne;
 
             case PlayerMovementState.Grounded:
-                return jumpingThisStep || !isGrounded
+                return groundJump || !isGrounded
                     ? PlayerMovementState.Airborne
                     : PlayerMovementState.Grounded;
 

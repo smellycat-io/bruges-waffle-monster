@@ -185,4 +185,40 @@ public class PlayerControllerPlayModeTests
 
         Assert.IsTrue(landed, "Player should land and return to Grounded after the jump arc.");
     }
+
+    [UnityTest]
+    public IEnumerator HoldingADirectionWhileClimbing_DrivesADescent()
+    {
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
+
+        yield return FixedSteps(15);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+
+        float beforeY = player.transform.position.y;
+        input.horizontal = 1f; // hold a run direction
+        yield return FixedSteps(20);
+
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State, "Holding a direction must not leave the wall.");
+        Assert.Less(player.transform.position.y, beforeY, "Holding a direction should move the player DOWN the wall.");
+    }
+
+    [UnityTest]
+    public IEnumerator JumpWhileClimbing_WallJumpsOffIntoAirborne()
+    {
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
+        var body = player.GetComponent<Rigidbody2D>();
+
+        yield return FixedSteps(15);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+
+        input.PressJump();
+        yield return null;                    // Update consumes the jump request
+        yield return new WaitForFixedUpdate(); // ...and FixedUpdate applies the wall-jump
+
+        Assert.AreEqual(PlayerMovementState.Airborne, player.State, "Jump while climbing should wall-jump into Airborne.");
+        Assert.Less(body.linearVelocity.x, 0f, "Wall is to the right, so the push is to the left (away from it).");
+        Assert.Greater(body.linearVelocity.y, 0f, "Wall-jump carries an upward impulse.");
+    }
 }

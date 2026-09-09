@@ -8,6 +8,7 @@ public class PlayerMovementControllerTests
         public float RunSpeed => 5f;
         public float JumpVelocity => 10f;
         public float ClimbSpeed => 3f;
+        public Vector2 WallJumpVelocity => new Vector2(7f, 9f);
         public float GravityScale => 3f;
     }
 
@@ -169,16 +170,98 @@ public class PlayerMovementControllerTests
     }
 
     [Test]
-    public void Climbing_JumpRequestIsIgnoredWhileOnSurface()
+    public void Climbing_HoldingLeft_DescendsAtClimbSpeed()
     {
         controller.SetEnvironment(grounded: false, touchingClimbable: true);
-        Step();
 
+        Vector2 velocity = Step(horizontalInput: -1f);
+
+        Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
+        Assert.AreEqual(-3f, velocity.y, 0.0001f, "Any held run direction should drive a descent.");
+        Assert.AreEqual(0f, velocity.x, 0.0001f, "Climbing is vertical only — no lateral movement.");
+    }
+
+    [Test]
+    public void Climbing_HoldingRight_AlsoDescends()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true);
+
+        Vector2 velocity = Step(horizontalInput: 1f);
+
+        Assert.AreEqual(-3f, velocity.y, 0.0001f);
+        Assert.AreEqual(0f, velocity.x, 0.0001f);
+    }
+
+    [Test]
+    public void Climbing_NoInput_StillAscends()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true);
+
+        Vector2 velocity = Step(horizontalInput: 0f);
+
+        Assert.AreEqual(3f, velocity.y, 0.0001f, "Releasing all input returns to automatic ascent.");
+    }
+
+    [Test]
+    public void Climbing_JumpInput_WallJumpsAwayFromAWallOnTheRight()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        Step();
+        Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
         controller.QueueJump();
         Vector2 velocity = Step();
 
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State, "Wall-jump exits Climbing into Airborne.");
+        Assert.AreEqual(-7f, velocity.x, 0.0001f, "Push is away from the wall (wall on right -> push left).");
+        Assert.AreEqual(9f, velocity.y, 0.0001f, "Upward impulse from WallJumpVelocity.y.");
+    }
+
+    [Test]
+    public void Climbing_JumpInput_WallJumpsAwayFromAWallOnTheLeft()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: -1f);
+        Step();
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: -1f);
+        controller.QueueJump();
+        Vector2 velocity = Step();
+
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State);
+        Assert.AreEqual(7f, velocity.x, 0.0001f, "Wall on left -> push right.");
+    }
+
+    [Test]
+    public void WallJump_DoesNotInstantlyReGrab_WhileStillTouchingAndMovingAway()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        Step();
+        controller.QueueJump();
+        Step();
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State);
+
+        // Still overlapping the wall, drifting away from it (negative x, wall on the right).
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        Vector2 velocity = controller.Tick(new Vector2(-7f, 4f), horizontalInput: 0f);
+
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State, "Kick-off must not be cancelled by an instant re-grab.");
+        Assert.AreEqual(-7f, velocity.x, 0.0001f, "The away-from-wall push is preserved, not zeroed.");
+    }
+
+    [Test]
+    public void WallJump_ReGrabsOnceMovingBackIntoTheWall()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        Step();
+        controller.QueueJump();
+        Step();
+
+        // Moving back toward the wall (positive x, wall on the right) while still in contact.
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(new Vector2(3f, 1f), horizontalInput: 0f);
+
         Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
-        Assert.AreEqual(3f, velocity.y, 0.0001f, "Climb speed must hold; the jump must not fire.");
     }
 
     [Test]
