@@ -28,7 +28,9 @@ public class ClimbableContactTrackerTests
     /// <summary>Stand-in for the collider Unity hands to OnCollision/OnTrigger callbacks.</summary>
     private static Collider2D ColliderOn(GameObject go)
     {
-        return go.GetComponent<Collider2D>() ?? go.AddComponent<BoxCollider2D>();
+        // Note: no "?? " here — GetComponent can return a Unity fake-null that "?? " misses.
+        var existing = go.GetComponent<Collider2D>();
+        return existing != null ? existing : go.AddComponent<BoxCollider2D>();
     }
 
     [Test]

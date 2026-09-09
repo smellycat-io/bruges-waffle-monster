@@ -62,8 +62,8 @@ inventing a new top-level folder ad hoc.
 
 - **Classes, methods, public fields, properties**: PascalCase (`WaffleWallet`,
   `TakeHit()`, `CurrentWaffleCount`)
-- **Private fields**: camelCase with leading underscore (`_currentWaffles`,
-  `_maxStashCapacity`)
+- **Private fields**: camelCase, no underscore prefix (`currentWaffles`,
+  `maxStashCapacity`) — matches the existing codebase convention
 - **Local variables, parameters**: camelCase (`hitStrength`, `waffleAmount`)
 - **Constants**: PascalCase or ALL_CAPS is fine, but be consistent within a file —
   prefer PascalCase (`const int MaxCitizenTypes = 3;`) to match Unity/C# convention
