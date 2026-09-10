@@ -30,6 +30,9 @@ Assets/
   Scripts/
     Core/            # GameStateManager, scene/state transition logic, singletons (rare, see below)
     Player/           # Waffle monster movement, controls, animation hooks
+      Movement/       #   PlayerController + the Grounded/Airborne/Climbing state machine + its config
+      Input/          #   IPlayerInputSource, TapPlayerInput, the tap-zone / climb-drag drivers + interpreters
+      Climbing/       #   ClimbableSurface marker (goes on level geometry) + contact tracking
     Enemies/          # Citizen types, Chef, Waffle Iron — shared + per-type behavior
     Waffles/          # WaffleWallet, waffle pickup/drop logic, waffle data
     Toppings/         # Topping pickups, throw/attack logic, topping data
