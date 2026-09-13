@@ -22,14 +22,19 @@ design decisions are finalized — see "Design Doc Sync" below).
 
 ## Folder Structure
 
-All game code lives under `Assets/`. Use this structure and keep it flat/predictable
-rather than nesting deeply:
+All game code lives under `Assets/`. Use this structure for the top-level systems —
+keep that layer flat/predictable rather than nesting deeply. Within a system folder,
+sub-group by concern once it's grown enough to need it (rule and worked example below
+the tree):
 
 ```
 Assets/
   Scripts/
     Core/            # GameStateManager, scene/state transition logic, singletons (rare, see below)
     Player/           # Waffle monster movement, controls, animation hooks
+      Movement/       #   PlayerController + the Grounded/Airborne/Climbing state machine + its config
+      Input/          #   IPlayerInputSource, TapPlayerInput, the tap-zone / climb-drag drivers + interpreters
+      Climbing/       #   ClimbableSurface marker (goes on level geometry) + contact tracking
     Enemies/          # Citizen types, Chef, Waffle Iron — shared + per-type behavior
     Waffles/          # WaffleWallet, waffle pickup/drop logic, waffle data
     Toppings/         # Topping pickups, throw/attack logic, topping data
@@ -55,15 +60,36 @@ Docs/
   GameDesign.md       # living design doc, kept in sync with this file (not under Assets/)
 ```
 
-If a new system doesn't obviously fit an existing folder, stop and ask rather than
-inventing a new top-level folder ad hoc.
+**Sub-grouping within a system folder.** Once a system folder (e.g. `Player/`) has
+grown enough that distinct concerns are visible in the file list, group like files
+into like subfolders by concern — not by file type (no `Scripts/`, `Interfaces/`, or
+`MonoBehaviours/` buckets). `Player/` above is the worked example:
+
+- `Movement/` — `PlayerController` and the Grounded/Airborne/Climbing state machine,
+  plus its config
+- `Input/` — the input interface, the intent aggregator, and the input drivers
+  together with their testable interpreter logic
+- `Climbing/` — the climbable-surface marker (placed on level geometry, not the
+  player) and contact tracking
+
+Each subfolder should be a cohesive concern a new contributor could name in one
+sentence, not an arbitrary bucket. Don't pre-emptively create subfolders for a system
+that's still small (2-3 files) — flat is fine until grouping actually earns its keep.
+When you do split an existing folder like this, move the `.meta` file with each
+script (preserves its GUID, so asset/scene references don't break) and add `.meta`
+files for the new subfolders; no code, namespace, or asmdef change is needed.
+
+If a new system doesn't obviously fit an existing top-level folder, stop and ask
+rather than inventing one ad hoc — and the same applies one level down: if a file
+doesn't obviously belong in an existing subfolder, ask rather than guessing at a new
+one.
 
 ## Naming Conventions
 
 - **Classes, methods, public fields, properties**: PascalCase (`WaffleWallet`,
   `TakeHit()`, `CurrentWaffleCount`)
-- **Private fields**: camelCase with leading underscore (`_currentWaffles`,
-  `_maxStashCapacity`)
+- **Private fields**: camelCase, no underscore prefix (`currentWaffles`,
+  `maxStashCapacity`) — matches the existing codebase convention
 - **Local variables, parameters**: camelCase (`hitStrength`, `waffleAmount`)
 - **Constants**: PascalCase or ALL_CAPS is fine, but be consistent within a file —
   prefer PascalCase (`const int MaxCitizenTypes = 3;`) to match Unity/C# convention

@@ -1,10 +1,13 @@
 {
-    "name": "BrugesWaffleMonster.Runtime",
-    "rootNamespace": "BrugesWaffleMonster",
+    "name": "BrugesWaffleMonster.Editor",
+    "rootNamespace": "BrugesWaffleMonster.Editor",
     "references": [
-        "Unity.InputSystem"
+        "BrugesWaffleMonster.Runtime",
+        "UnityEngine.UI"
     ],
-    "includePlatforms": [],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": false,
     "overrideReferences": false,
