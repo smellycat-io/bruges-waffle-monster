@@ -36,6 +36,9 @@ Assets/
       Input/          #   IPlayerInputSource, TapPlayerInput, the tap-zone / climb-drag drivers + interpreters
       Climbing/       #   ClimbableSurface marker (goes on level geometry) + contact tracking
     Enemies/          # Citizen types, Chef, Waffle Iron — shared + per-type behavior
+      Citizens/       #   CitizenAI (shared behavior) + CitizenBehaviorController + CitizenChaseState;
+                      #   per-type balance data is CitizenTypeData assets under ScriptableObjects/Enemies/,
+                      #   not separate scripts. Chef/ and WaffleIron/ are expected siblings once built.
     Waffles/          # WaffleWallet, waffle pickup/drop logic, waffle data
     Toppings/         # Topping pickups, throw/attack logic, topping data
     Cooking/          # Eat Event / stash / recipe system (post-boss unlock)

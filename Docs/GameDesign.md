@@ -4,7 +4,7 @@
 
 - The game loop is represented by `RunnerState`, `KitchenApproachState`, and `ArenaState`, each implementing `IGameState` and managed by `GameStateManager`.
 - State transitions are currently manual debug transitions only; gameplay trigger conditions are intentionally unspecified.
-- `WaffleWallet` is the shared component for waffle capacity and hit-strength removal. It exposes a drained state and event; drained behavior is intentionally not implemented yet.
+- `WaffleWallet` is the shared component for waffle capacity and hit-strength removal, used by both citizens and the player. Its `Drained` event now drives citizen disengage behavior (see "Citizen Enemies" below).
 
 ## Player Movement (feature/player-movement)
 
@@ -80,10 +80,69 @@ Open questions beyond the raw numbers:
 - **Ground check**: 0.15 u circle at a "GroundCheck" child; may need per-character
   tuning once real art/colliders exist.
 
-## Balance Questions
+## Citizen Enemies (feature/citizen-enemies)
 
-The following values remain placeholders and need design decisions before they are meaningful:
+Three citizen types share one behavior component (`CitizenAI`), parameterized entirely by a
+`CitizenTypeData` asset per type (`Assets/ScriptableObjects/Enemies/Citizen_*.asset`) — a new
+citizen type is a new asset, never a new script.
 
-- Citizen wallet size, hit strength, and speed.
+- **Detection is line-of-sight, not proximity.** Each tick, `CitizenAI` raycasts from itself
+  to the player; if nothing solid is in the way and the player is within `DetectionRange`,
+  it chases. Anything else the ray hits first (a building, another citizen, ...) blocks it —
+  there's no separate "Obstacle" tag/layer to remember to apply to new geometry, any collider
+  in the way counts. Losing line-of-sight (player breaks the ray) stops the chase immediately
+  — no memory/last-known-position pursuit.
+- **Chase movement is grounded and horizontal-only** (citizens don't climb or match the
+  player's height) — a deliberate choice so climbing stays a real escape route. Not
+  explicitly requested; flagging in case full 2D pursuit was actually intended.
+- **Catching the player** (trigger contact while Chasing) calls `PlayerStrikeSystem.RegisterStrike`
+  on the player — `CitizenAI` never touches the player's wallet directly. A Disengaged
+  (crying) citizen can't catch the player even on contact.
+- **Wallet drain → disengage** uses the citizen's own `WaffleWallet.Drained` event (the "shared
+  component, drained behavior now implemented" piece GameDesign.md previously flagged as
+  outstanding). Once Disengaged it's a one-way latch for the rest of the level.
+- **The player-side strike/catch system** (`PlayerStrikeSystem`, `Assets/Scripts/Player/Strike/`)
+  is a separate component from `PlayerController` (movement vs. encounter-consequences are
+  different responsibilities) and separate from the Chef's eventual instant-loss system —
+  a strike always keeps whatever remains in the stash and respawns the player; it never
+  resets the level. Strike 1 removes `hitStrength` waffles, strike 2 removes
+  `hitStrength × 2`, strike 3 (and any catch after that, regardless of which type causes it)
+  wipes the waffle wallet entirely and fires a `FullStashWiped` event. **There is no topping
+  stash system yet** (Toppings/Cooking are unbuilt) — `FullStashWiped` is the hook for it to
+  also clear itself once it exists; nothing invents that logic here. `ResetStrikes()` exists
+  for a full level restart (e.g. the Chef's instant-loss) to call once that system exists —
+  nothing calls it yet.
+- **Respawn position** = wherever the player's `PlayerStrikeSystem` was at `Awake()` (i.e. the
+  player's placed starting position for this scene). There's no dedicated level-start marker
+  yet; if levels ever get mid-level checkpoints, this needs a real spawn-point component
+  instead of "wherever you started."
+- **Placeholder visuals**: `CitizenTypeData.PlaceholderColor` tints the sprite per type
+  (Tourist yellow, Vendor orange, Guard blue); a Disengaged citizen's tint darkens
+  (`disengagedColorMultiplier` on `CitizenAI`, presentation only, not a balance number).
+- Build/playtest via **Tools ▸ Bruges Waffle Monster ▸ Build Citizen Sandbox** (after the
+  player sandbox) — 2 of each type plus one opaque obstacle block for line-of-sight testing.
+
+### Citizen balance — wallet & hit-strength are LOCKED, movement/detection are placeholders
+
+| Type | Wallet | Hit strength | Move speed (PLACEHOLDER) | Detection range (PLACEHOLDER) | Color |
+|------|--------|--------------|---------------------------|-------------------------------|-------|
+| Tourist | 1–2 | 1 | 2 u/s | 4 u | soft yellow |
+| Vendor  | 3–4 | 2 | 3.5 u/s | 5 u | orange |
+| Guard   | 5–6 | 3 | 5 u/s | 7 u | dark blue |
+
+Speeds are chosen relative to the player's 6 u/s run speed (Guard deliberately stays just
+below it — outrunnable in a straight sprint, but only barely). Detection ranges are a first
+guess with no real reference point. Both need feel-testing; wallet size and hit strength are
+final per direction, not to be re-guessed.
+
+### Other open questions
+
+- No catch cooldown: a citizen can register a strike again immediately if it ends up
+  overlapping the player again right after a respawn (e.g. spawn point near a citizen).
+  Not handled — flag if this becomes a real problem in testing.
+- Citizen chase movement doesn't decelerate/arrive — it can jitter right at contact distance
+  for a frame or two before the catch registers. Cosmetic only.
+- The player's sandbox starting wallet (20 waffles, in `PlayerSandboxBuilder`) is a
+  play-testing convenience, not a real starting-stash balance decision.
 - Chef known-return windows, random-return probability, bedtime, blink-rate curve, and fake-out frequency.
 - Waffle removal scaling beyond the current direct hit-strength prototype.
