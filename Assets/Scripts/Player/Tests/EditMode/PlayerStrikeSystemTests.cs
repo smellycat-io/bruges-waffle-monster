@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using UnityEditor;
 using UnityEngine;
 
 public class PlayerStrikeSystemTests
@@ -14,12 +15,22 @@ public class PlayerStrikeSystemTests
         wallet = playerObject.AddComponent<WaffleWallet>();
         wallet.Initialize(20, 20);
         strikeSystem = playerObject.AddComponent<PlayerStrikeSystem>();
+        // Escalation-math tests below fire several strikes back-to-back with no time between
+        // them; invincibility is covered separately, so it's off by default here.
+        SetInvincibilityDuration(0f);
     }
 
     [TearDown]
     public void TearDown()
     {
         Object.DestroyImmediate(playerObject);
+    }
+
+    private void SetInvincibilityDuration(float seconds)
+    {
+        var so = new SerializedObject(strikeSystem);
+        so.FindProperty("invincibilityDuration").floatValue = seconds;
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     [Test]
@@ -128,5 +139,88 @@ public class PlayerStrikeSystemTests
         strikeSystem.ResetStrikes();
 
         Assert.AreEqual(0, strikeSystem.CurrentStrikeCount);
+    }
+
+    // ---- Respawn invincibility ----
+
+    [Test]
+    public void NotInvincible_BeforeAnyStrike()
+    {
+        Assert.IsFalse(strikeSystem.IsInvincible);
+    }
+
+    [Test]
+    public void BecomesInvincible_ImmediatelyAfterAStrike()
+    {
+        SetInvincibilityDuration(1.5f);
+
+        strikeSystem.RegisterStrike(1);
+
+        Assert.IsTrue(strikeSystem.IsInvincible);
+    }
+
+    [Test]
+    public void DuringInvincibilityWindow_AFurtherCatchIsIgnoredEntirely()
+    {
+        SetInvincibilityDuration(1.5f);
+        strikeSystem.RegisterStrike(2); // strike 1: -2 -> 18
+
+        strikeSystem.RegisterStrike(3); // should be fully ignored — still invincible
+
+        Assert.AreEqual(1, strikeSystem.CurrentStrikeCount, "A catch during invincibility must not count as a strike.");
+        Assert.AreEqual(18, wallet.CurrentWaffleCount, "...and must not remove any more waffles.");
+    }
+
+    [Test]
+    public void DuringInvincibilityWindow_IgnoredCatchDoesNotFireStruckOrRespawnAgain()
+    {
+        SetInvincibilityDuration(1.5f);
+        strikeSystem.RegisterStrike(2);
+        playerObject.transform.position = new Vector3(4f, 4f, 0f); // move after the (ignored) respawn point
+
+        int struckCalls = 0;
+        strikeSystem.Struck += _ => struckCalls++;
+
+        strikeSystem.RegisterStrike(3); // ignored: no event, no re-teleport to spawn
+
+        Assert.AreEqual(0, struckCalls);
+        Assert.AreEqual(new Vector3(4f, 4f, 0f), playerObject.transform.position, "An ignored catch must not respawn the player.");
+    }
+
+    [Test]
+    public void AfterInvincibilityExpires_ACatchStrikesAgain()
+    {
+        SetInvincibilityDuration(1.5f);
+        strikeSystem.RegisterStrike(2); // strike 1: -2 -> 18
+
+        strikeSystem.Tick(1.51f); // advance past the window
+        Assert.IsFalse(strikeSystem.IsInvincible);
+
+        strikeSystem.RegisterStrike(3); // strike 2: -6 -> 12
+
+        Assert.AreEqual(2, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(12, wallet.CurrentWaffleCount);
+    }
+
+    [Test]
+    public void Invincibility_CountsDownGraduallyAcrossMultipleTicks()
+    {
+        SetInvincibilityDuration(1.0f);
+        strikeSystem.RegisterStrike(1);
+
+        strikeSystem.Tick(0.6f);
+        Assert.IsTrue(strikeSystem.IsInvincible, "0.6s of 1.0s elapsed — still within the window.");
+
+        strikeSystem.Tick(0.5f); // total 1.1s
+        Assert.IsFalse(strikeSystem.IsInvincible);
+    }
+
+    [Test]
+    public void ZeroDurationConfigured_NeverBlocksAnyCatch()
+    {
+        // SetUp already configures 0 — this documents that 0 is a valid "off" setting, not a bug.
+        strikeSystem.RegisterStrike(1);
+
+        Assert.IsFalse(strikeSystem.IsInvincible);
     }
 }

@@ -17,4 +17,5 @@ MonoBehaviour:
   hitStrength: 3
   moveSpeed: 5
   detectionRange: 7
+  canClimb: 1
   placeholderColor: {r: 0.2, g: 0.3, b: 0.75, a: 1}

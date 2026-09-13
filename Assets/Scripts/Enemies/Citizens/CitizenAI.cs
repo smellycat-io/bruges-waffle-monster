@@ -12,6 +12,11 @@ using UnityEngine;
 /// <see cref="CitizenBehaviorController"/>, mirroring the player's
 /// PlayerMovementController/PlayerController split.
 ///
+/// Climbing is opt-in per type via <see cref="CitizenTypeData.CanClimb"/> (only the Guard has
+/// it, currently) rather than a type check in code — reuses the same
+/// <see cref="ClimbableSurface"/> marker and <see cref="ClimbableContactTracker"/> the player
+/// climbs with, just driven as a simple vertical follow instead of player input.
+///
 /// Expects a trigger <c>Collider2D</c> for catching the player (not required via
 /// [RequireComponent] since Collider2D is abstract — see PlayerController for the same note).
 /// </summary>
@@ -38,6 +43,7 @@ public class CitizenAI : MonoBehaviour
     private Transform target;
     private PlayerStrikeSystem targetStrikeSystem;
     private readonly CitizenBehaviorController behavior = new CitizenBehaviorController();
+    private readonly ClimbableContactTracker climbable = new ClimbableContactTracker();
     private bool isWalletDrained;
 
     /// <summary>Current behavior state. Reports Idle before wiring completes.</summary>
@@ -84,7 +90,12 @@ public class CitizenAI : MonoBehaviour
     }
 
     private void OnEnable() => wallet.Drained += HandleWalletDrained;
-    private void OnDisable() => wallet.Drained -= HandleWalletDrained;
+
+    private void OnDisable()
+    {
+        wallet.Drained -= HandleWalletDrained;
+        climbable.Clear();
+    }
 
     private void HandleWalletDrained() => isWalletDrained = true;
 
@@ -133,11 +144,25 @@ public class CitizenAI : MonoBehaviour
             return;
         }
 
-        // Grounded pursuit: horizontal only, so climbing stays a real escape route for the
-        // player. If citizens should instead close in on the player's exact position
-        // (including height), this is the one line to change.
+        if (typeData.CanClimb && climbable.IsTouchingClimbable)
+        {
+            ClimbTowardTarget();
+            return;
+        }
+
+        // Grounded pursuit: horizontal only, so climbing stays a real escape route for
+        // citizen types that can't follow (CanClimb false). If citizens should instead close
+        // in on the player's exact position outright, this is the one line to change.
         float direction = Mathf.Sign(target.position.x - transform.position.x);
         Vector2 nextPosition = body.position + new Vector2(direction * typeData.MoveSpeed * Time.fixedDeltaTime, 0f);
+        body.MovePosition(nextPosition);
+    }
+
+    /// <summary>Simple vertical follow while on a ClimbableSurface — no drag input, no wall-jump, just close the height gap at MoveSpeed.</summary>
+    private void ClimbTowardTarget()
+    {
+        float direction = Mathf.Sign(target.position.y - transform.position.y);
+        Vector2 nextPosition = body.position + new Vector2(0f, direction * typeData.MoveSpeed * Time.fixedDeltaTime);
         body.MovePosition(nextPosition);
     }
 
@@ -164,6 +189,14 @@ public class CitizenAI : MonoBehaviour
     }
 
     private void OnTriggerEnter2D(Collider2D other)
+    {
+        climbable.RegisterContact(other);
+        TryCatchTarget(other);
+    }
+
+    private void OnTriggerExit2D(Collider2D other) => climbable.UnregisterContact(other);
+
+    private void TryCatchTarget(Collider2D other)
     {
         if (behavior.State != CitizenChaseState.Chasing || target == null)
         {

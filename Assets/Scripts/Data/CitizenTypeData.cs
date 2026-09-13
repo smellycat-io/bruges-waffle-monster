@@ -22,6 +22,10 @@ public class CitizenTypeData : ScriptableObject
     [Tooltip("Max line-of-sight raycast distance. Beyond this, the citizen can't see the player regardless of obstruction.")]
     [SerializeField, Min(0f)] private float detectionRange;
 
+    [Header("Abilities")]
+    [Tooltip("Whether this type follows the player onto ClimbableSurface geometry (simple vertical pursuit at MoveSpeed) instead of staying strictly grounded/horizontal. Data-driven so any future type can opt in without touching CitizenAI.")]
+    [SerializeField] private bool canClimb;
+
     [Header("Placeholder visuals")]
     [Tooltip("Tint applied to the placeholder sprite so citizen types are distinguishable before real art exists.")]
     [SerializeField] private Color placeholderColor = Color.white;
@@ -31,6 +35,7 @@ public class CitizenTypeData : ScriptableObject
     public int HitStrength => hitStrength;
     public float MoveSpeed => moveSpeed;
     public float DetectionRange => detectionRange;
+    public bool CanClimb => canClimb;
     public Color PlaceholderColor => placeholderColor;
 
     /// <summary>Rolls a starting/carried waffle count within [<see cref="MinWalletSize"/>, <see cref="MaxWalletSize"/>].</summary>

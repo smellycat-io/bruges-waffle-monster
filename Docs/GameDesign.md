@@ -112,10 +112,26 @@ citizen type is a new asset, never a new script.
   also clear itself once it exists; nothing invents that logic here. `ResetStrikes()` exists
   for a full level restart (e.g. the Chef's instant-loss) to call once that system exists —
   nothing calls it yet.
+- **Respawn invincibility**: after a strike, the player is immune to further catches for
+  `invincibilityDuration` seconds (a serialized field on `PlayerStrikeSystem`, PLACEHOLDER —
+  see table below) — a catch during that window is ignored entirely: no strike count, no
+  wallet loss, no re-respawn. A flicker (the sprite's `SpriteRenderer.enabled` toggling,
+  found on a child if not wired explicitly) is the visual tell so it's never an invisible
+  rule. The countdown and flicker are driven by `PlayerStrikeSystem.Tick(deltaTime)` — called
+  from `Update` in play, and directly with synthetic values in EditMode tests, the same
+  "logic takes an explicit time/step, doesn't read `Time.x` itself" pattern already used by
+  `PlayerMovementController.Tick` and `TapZoneInterpreter.Tick`.
 - **Respawn position** = wherever the player's `PlayerStrikeSystem` was at `Awake()` (i.e. the
   player's placed starting position for this scene). There's no dedicated level-start marker
   yet; if levels ever get mid-level checkpoints, this needs a real spawn-point component
   instead of "wherever you started."
+- **Climbing is opt-in per citizen type** via `CitizenTypeData.CanClimb` (a data flag, not a
+  type check in `CitizenAI`) — currently only the Guard has it. A climbing citizen reuses the
+  player's own `ClimbableSurface` marker + `ClimbableContactTracker` for "am I touching
+  climbable geometry," then does a simple vertical follow toward the target's height at
+  `MoveSpeed` (no drag input, no wall-jump — the task explicitly didn't need the player's full
+  climb model here, and citizens are kinematic so there's no gravity to fight in the first
+  place). Tourist/Vendor are unaffected — same strictly-horizontal chase as before.
 - **Placeholder visuals**: `CitizenTypeData.PlaceholderColor` tints the sprite per type
   (Tourist yellow, Vendor orange, Guard blue); a Disengaged citizen's tint darkens
   (`disengagedColorMultiplier` on `CitizenAI`, presentation only, not a balance number).
@@ -124,24 +140,34 @@ citizen type is a new asset, never a new script.
 
 ### Citizen balance — wallet & hit-strength are LOCKED, movement/detection are placeholders
 
-| Type | Wallet | Hit strength | Move speed (PLACEHOLDER) | Detection range (PLACEHOLDER) | Color |
-|------|--------|--------------|---------------------------|-------------------------------|-------|
-| Tourist | 1–2 | 1 | 2 u/s | 4 u | soft yellow |
-| Vendor  | 3–4 | 2 | 3.5 u/s | 5 u | orange |
-| Guard   | 5–6 | 3 | 5 u/s | 7 u | dark blue |
+| Type | Wallet | Hit strength | Move speed (PLACEHOLDER) | Detection range (PLACEHOLDER) | Can climb | Color |
+|------|--------|--------------|---------------------------|-------------------------------|-----------|-------|
+| Tourist | 1–2 | 1 | 2 u/s | 4 u | No | soft yellow |
+| Vendor  | 3–4 | 2 | 3.5 u/s | 5 u | No | orange |
+| Guard   | 5–6 | 3 | 5 u/s | 7 u | **Yes** | dark blue |
 
 Speeds are chosen relative to the player's 6 u/s run speed (Guard deliberately stays just
 below it — outrunnable in a straight sprint, but only barely). Detection ranges are a first
 guess with no real reference point. Both need feel-testing; wallet size and hit strength are
 final per direction, not to be re-guessed.
 
+| Value | Placeholder | Where | Notes |
+|-------|-------------|-------|-------|
+| Respawn invincibility duration | 1.5 s | `PlayerStrikeSystem` | needs feel-testing sign-off |
+| Invincibility flicker interval | 0.12 s | `PlayerStrikeSystem` | presentation only, not balance |
+
 ### Other open questions
 
-- No catch cooldown: a citizen can register a strike again immediately if it ends up
-  overlapping the player again right after a respawn (e.g. spawn point near a citizen).
-  Not handled — flag if this becomes a real problem in testing.
+- ~~No catch cooldown~~ — resolved by respawn invincibility: a citizen standing on/near the
+  spawn point can no longer immediately re-strike, for `invincibilityDuration` seconds.
 - Citizen chase movement doesn't decelerate/arrive — it can jitter right at contact distance
   for a frame or two before the catch registers. Cosmetic only.
+- **Does a `ClimbableSurface` block citizen line-of-sight?** Currently yes — the LOS raycast
+  doesn't special-case it, so a climbable wall (even though it's a "thin decorative" trigger)
+  counts as an obstacle like any other collider. Not exercised in normal play yet, but worth
+  a conscious call once real building geometry exists: a Guard climbing the *same* wall the
+  player is on would currently still need clear sight past the wall's own collider to have
+  spotted them in the first place.
 - The player's sandbox starting wallet (20 waffles, in `PlayerSandboxBuilder`) is a
   play-testing convenience, not a real starting-stash balance decision.
 - Chef known-return windows, random-return probability, bedtime, blink-rate curve, and fake-out frequency.

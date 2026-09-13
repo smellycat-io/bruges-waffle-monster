@@ -47,6 +47,7 @@ public class CitizenAIPlayModeTests
         go.AddComponent<Rigidbody2D>();
         var col = go.AddComponent<CapsuleCollider2D>();
         col.isTrigger = true;
+        col.size = new Vector2(0.8f, 1.3f); // explicit so tests can reason precisely about overlap geometry
         go.AddComponent<WaffleWallet>();
 
         var ai = go.AddComponent<CitizenAI>();
@@ -61,6 +62,7 @@ public class CitizenAIPlayModeTests
         var go = new GameObject("Target");
         go.transform.position = position;
         spawned.Add(go);
+        go.AddComponent<CapsuleCollider2D>(); // solid, like the real player — citizens catch via THEIR trigger against it
 
         if (withStrikeSystem)
         {
@@ -78,6 +80,26 @@ public class CitizenAIPlayModeTests
         spawned.Add(go);
         go.AddComponent<BoxCollider2D>().size = size;
         return go;
+    }
+
+    private GameObject CreateClimbableWall(Vector2 position, Vector2 size)
+    {
+        var go = new GameObject("ClimbWall");
+        go.transform.position = position;
+        spawned.Add(go);
+
+        var col = go.AddComponent<BoxCollider2D>();
+        col.size = size;
+        col.isTrigger = true;
+        go.AddComponent<ClimbableSurface>();
+        return go;
+    }
+
+    private void SetCanClimb(bool value)
+    {
+        var so = new UnityEditor.SerializedObject(typeData);
+        so.FindProperty("canClimb").boolValue = value;
+        so.ApplyModifiedPropertiesWithoutUndo();
     }
 
     private static IEnumerator FixedSteps(int count)
@@ -212,5 +234,50 @@ public class CitizenAIPlayModeTests
         yield return FixedSteps(3);
 
         Assert.AreEqual(CitizenChaseState.Chasing, citizen.State, "Should auto-discover the PlayerController and chase it.");
+    }
+
+    // ---- Guard-only climbing (CitizenTypeData.CanClimb) ----
+    //
+    // Geometry note: the wall sits at x 0.3..1.7, just past the edge of the citizen's collider
+    // (spans -0.4..0.4 at x=0) so contact registers, while the vertical sightline from citizen
+    // to target (both at x=0) never crosses the wall — keeping the ClimbableSurface's own
+    // (trigger) collider out of the line-of-sight raycast for this test.
+
+    [UnityTest]
+    public IEnumerator ClimbCapableCitizen_FollowsThePlayerVerticallyOnAClimbableSurface()
+    {
+        SetCanClimb(true);
+        CreateClimbableWall(new Vector2(1f, 3f), new Vector2(1.4f, 8f));
+        var target = CreateTarget(new Vector2(0f, 6f), withStrikeSystem: false);
+        var citizen = CreateCitizen(Vector2.zero);
+        citizen.SetTarget(target.transform);
+
+        yield return FixedSteps(3);
+        Assert.AreEqual(CitizenChaseState.Chasing, citizen.State, "Clear vertical sightline (outside the wall) should start the chase.");
+
+        float startY = citizen.transform.position.y;
+        yield return FixedSteps(30);
+
+        Assert.Greater(citizen.transform.position.y, startY + 0.5f,
+            "A CanClimb citizen touching a ClimbableSurface should follow the player upward.");
+    }
+
+    [UnityTest]
+    public IEnumerator NonClimbingCitizen_StaysGrounded_EvenWhileTouchingAClimbableSurface()
+    {
+        // canClimb stays false (the default) — identical geometry to the test above otherwise.
+        CreateClimbableWall(new Vector2(1f, 3f), new Vector2(1.4f, 8f));
+        var target = CreateTarget(new Vector2(0f, 6f), withStrikeSystem: false);
+        var citizen = CreateCitizen(Vector2.zero);
+        citizen.SetTarget(target.transform);
+
+        yield return FixedSteps(3);
+        Assert.AreEqual(CitizenChaseState.Chasing, citizen.State);
+
+        float startY = citizen.transform.position.y;
+        yield return FixedSteps(30);
+
+        Assert.AreEqual(startY, citizen.transform.position.y, 0.001f,
+            "Tourist/Vendor (CanClimb=false) must stay grounded/horizontal even when touching a ClimbableSurface.");
     }
 }
