@@ -260,4 +260,91 @@ public class PlayerControllerPlayModeTests
         Assert.Less(body.linearVelocity.x, 0f, "Wall is to the right, so the push is to the left (away from it).");
         Assert.Greater(body.linearVelocity.y, 0f, "Wall-jump carries an upward impulse.");
     }
+
+    [UnityTest]
+    public IEnumerator FallingAgainstANonClimbableWall_WhileHoldingIntoIt_StillFalls()
+    {
+        // Regression test for the wall-sticking bug: a solid, non-climbable wall the player
+        // holds into while falling must not arrest their vertical fall via friction.
+        CreateSurface("Wall", new Vector2(0.9f, 5f), new Vector2(1f, 20f), climbable: false, asTrigger: false);
+        var player = CreatePlayer(new Vector2(0f, 5f), out var input);
+        var body = player.GetComponent<Rigidbody2D>();
+
+        input.horizontal = 1f; // hold toward the wall the whole time
+
+        float startY = player.transform.position.y;
+        yield return FixedSteps(30);
+
+        Assert.Less(player.transform.position.y, startY - 0.5f,
+            "Holding into a solid, non-climbable wall must not stop the player from falling.");
+        Assert.Less(body.linearVelocity.y, -0.5f,
+            "The player should still be gaining downward speed, not frozen against the wall by friction.");
+        Assert.AreEqual(PlayerMovementState.Airborne, player.State, "Never enters Climbing — the wall has no ClimbableSurface.");
+    }
+
+    [UnityTest]
+    public IEnumerator HoldingDirectionAwayFromWall_DetachesFromClimbingAndFalls()
+    {
+        CreateSurface("ClimbWall", new Vector2(0.6f, 2f), new Vector2(0.6f, 10f), climbable: true, asTrigger: true);
+        var player = CreatePlayer(new Vector2(0f, 0.1f), out var input);
+
+        yield return FixedSteps(10);
+        Assert.AreEqual(PlayerMovementState.Climbing, player.State);
+
+        input.horizontal = -1f; // hold away from the wall (wall is to the right) — no jump input at all
+        yield return FixedSteps(3);
+        Assert.AreEqual(PlayerMovementState.Airborne, player.State, "Holding away from the wall should detach with no jump input.");
+
+        float yAfterDetach = player.transform.position.y;
+        yield return FixedSteps(15);
+
+        Assert.Less(player.transform.position.y, yAfterDetach, "Should now be falling under gravity, unassisted.");
+    }
+
+    [UnityTest]
+    public IEnumerator FallingFarEnough_RegistersAFallStrikeThroughPlayerStrikeSystem()
+    {
+        CreateSurface("Ground", new Vector2(0f, -1f), new Vector2(20f, 1f), climbable: false, asTrigger: false);
+
+        // Built by hand (not CreatePlayer) so WaffleWallet/PlayerStrikeSystem exist before
+        // PlayerController.Awake() runs and discovers them via GetComponent.
+        var go = new GameObject("FallingPlayer");
+        go.SetActive(false);
+        go.transform.position = new Vector2(0f, 20f);
+        spawned.Add(go);
+
+        go.AddComponent<Rigidbody2D>().freezeRotation = true;
+        go.AddComponent<BoxCollider2D>().size = Vector2.one;
+
+        var feet = new GameObject("GroundCheck");
+        feet.transform.SetParent(go.transform);
+        feet.transform.localPosition = new Vector3(0f, -0.5f, 0f);
+
+        var wallet = go.AddComponent<WaffleWallet>();
+        wallet.Initialize(20, 20);
+        var strikeSystem = go.AddComponent<PlayerStrikeSystem>();
+        var strikeSo = new UnityEditor.SerializedObject(strikeSystem);
+        strikeSo.FindProperty("fallDamageThreshold").floatValue = 5f;
+        strikeSo.FindProperty("invincibilityDuration").floatValue = 0f;
+        strikeSo.ApplyModifiedPropertiesWithoutUndo();
+
+        var input = go.AddComponent<StubInputSource>();
+        var player = go.AddComponent<PlayerController>();
+        player.Configure(config);
+        player.SetInputSource(input);
+        typeof(PlayerController)
+            .GetField("groundCheck", BindingFlags.NonPublic | BindingFlags.Instance)
+            .SetValue(player, feet.transform);
+
+        go.SetActive(true);
+
+        bool struck = false;
+        for (int i = 0; i < 300 && !struck; i++)
+        {
+            yield return new WaitForFixedUpdate();
+            struck = strikeSystem.CurrentStrikeCount > 0;
+        }
+
+        Assert.IsTrue(struck, "A long fall (20 units, threshold 5) onto solid ground should register as a fall strike.");
+    }
 }

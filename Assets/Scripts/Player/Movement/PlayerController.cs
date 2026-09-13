@@ -12,9 +12,11 @@ using UnityEngine;
 ///
 /// Responsibilities kept here (the "Unity glue"): reading input via
 /// <see cref="IPlayerInputSource"/>, a feet ground-check, feeding climbable-contact
-/// callbacks to <see cref="ClimbableContactTracker"/>, and writing the resulting velocity
-/// and gravity to the <see cref="Rigidbody2D"/>. All decision logic lives in the plain
-/// classes it composes.
+/// callbacks to <see cref="ClimbableContactTracker"/>, writing the resulting velocity and
+/// gravity to the <see cref="Rigidbody2D"/>, and reporting completed falls (via
+/// <see cref="FallTracker"/>) to <c>PlayerStrikeSystem</c>, if one is present, so fall damage
+/// reuses the exact same strike escalation as a citizen catch. All decision logic lives in
+/// the plain classes it composes.
 /// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
 public class PlayerController : MonoBehaviour
@@ -38,9 +40,33 @@ public class PlayerController : MonoBehaviour
     private IPlayerInputSource inputSource;
     private PlayerMovementController movement;
     private readonly ClimbableContactTracker climbable = new ClimbableContactTracker();
+    private readonly FallTracker fallTracker = new FallTracker();
+
+    // Optional: reports completed falls to it (see FixedUpdate). Discovered rather than a
+    // required/serialized reference — movement shouldn't hard-depend on the strike system
+    // existing (e.g. a movement-only test rig).
+    private PlayerStrikeSystem strikeSystem;
 
     private ContactFilter2D groundFilter;
     private readonly List<Collider2D> groundHits = new List<Collider2D>();
+
+    // This controller is entirely velocity-driven — FixedUpdate re-applies horizontal
+    // velocity every step regardless of collisions (see below). With Unity's default
+    // (non-zero) collider friction, holding a direction into ANY solid surface keeps
+    // re-creating a contact force against it, and friction then uses that same contact to
+    // resist the player's vertical sliding too — the player would hang frozen against a
+    // wall mid-air instead of continuing to fall. Confirmed by direct physics testing.
+    // Zero friction here restores normal free-fall on contact with non-climbable geometry;
+    // climbing itself is driven entirely by explicit velocity, not friction, so this has no
+    // effect on the climb feel.
+    //
+    // Lazily created (not a field initializer): Unity does not allow constructing a
+    // PhysicsMaterial2D outside Awake/Start/an instance method — a static field initializer
+    // runs as part of the type's static constructor, which Unity explicitly rejects
+    // ("Create_Internal is not allowed to be called from a MonoBehaviour constructor or
+    // instance field initializer"), throwing a TypeInitializationException that then poisons
+    // every subsequent use of this type for the rest of the domain's lifetime.
+    private static PhysicsMaterial2D noFrictionMaterial;
 
     /// <summary>Current body state. Reports <see cref="PlayerMovementState.Grounded"/> before wiring completes.</summary>
     public PlayerMovementState State => movement?.State ?? PlayerMovementState.Grounded;
@@ -48,6 +74,17 @@ public class PlayerController : MonoBehaviour
     private void Awake()
     {
         body = GetComponent<Rigidbody2D>();
+        strikeSystem = GetComponent<PlayerStrikeSystem>();
+
+        if (noFrictionMaterial == null)
+        {
+            noFrictionMaterial = new PhysicsMaterial2D("PlayerNoFriction") { friction = 0f, bounciness = 0f };
+        }
+
+        foreach (Collider2D playerCollider in GetComponents<Collider2D>())
+        {
+            playerCollider.sharedMaterial = noFrictionMaterial;
+        }
 
         groundFilter = new ContactFilter2D { useTriggers = false, useLayerMask = true };
         groundFilter.SetLayerMask(groundLayers);
@@ -81,6 +118,12 @@ public class PlayerController : MonoBehaviour
         float climb = inputSource?.ClimbAxis ?? 0f;
         body.linearVelocity = movement.Tick(body.linearVelocity, horizontal, climb);
         body.gravityScale = movement.GravityActive ? config.GravityScale : 0f;
+
+        float? completedFall = fallTracker.Tick(transform.position.y, movement.State);
+        if (completedFall.HasValue)
+        {
+            strikeSystem?.RegisterFall(completedFall.Value);
+        }
     }
 
     /// <summary>Swap the movement config at runtime (also used by tests). Rebuilds the state machine.</summary>

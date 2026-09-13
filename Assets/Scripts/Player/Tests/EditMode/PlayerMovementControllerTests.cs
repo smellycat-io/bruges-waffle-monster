@@ -315,4 +315,74 @@ public class PlayerMovementControllerTests
         Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
         Assert.AreEqual(0f, velocity.y, 0.0001f, "The ground jump is dropped; the player just grabs the wall and hangs.");
     }
+
+    // ---- Detach-by-direction while climbing ----
+
+    [Test]
+    public void Climbing_HoldingDirectionAwayFromWall_DetachesIntoAirborne_NoImpulse()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f); // wall on the right
+        controller.Tick(Vector2.zero, 0f, 1f); // grab, ascending
+        Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        Vector2 velocity = controller.Tick(new Vector2(0f, 3f), horizontalInput: -1f, climbInput: 0f); // hold away (left)
+
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State, "Holding away from the wall should detach with no jump input at all.");
+        Assert.AreEqual(-5f, velocity.x, 0.0001f, "Normal air control away from the wall — not a special kick.");
+        Assert.AreEqual(3f, velocity.y, 0.0001f, "No impulse: vertical velocity continues from whatever climbing had, gravity takes it from here.");
+    }
+
+    [Test]
+    public void Climbing_HoldingDirectionTowardWall_DoesNotDetach()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f); // wall on the right
+        controller.Tick(Vector2.zero, 0f, 0f);
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(Vector2.zero, horizontalInput: 1f, climbInput: 0f); // hold toward the wall
+
+        Assert.AreEqual(PlayerMovementState.Climbing, controller.State, "Holding toward the wall is not a detach.");
+    }
+
+    [Test]
+    public void Climbing_NoDirectionHeld_DoesNotDetach()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(Vector2.zero, 0f, 0f);
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(Vector2.zero, horizontalInput: 0f, climbInput: 1f);
+
+        Assert.AreEqual(PlayerMovementState.Climbing, controller.State);
+    }
+
+    [Test]
+    public void Climbing_DetachNearTheGround_ResolvesToGroundedNotAirborne()
+    {
+        // Detaching low enough to already be standing reuses the exact same "left the
+        // surface" fallthrough as climbing off the top or losing contact.
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(Vector2.zero, 0f, 0f);
+
+        controller.SetEnvironment(grounded: true, touchingClimbable: true, wallDirection: 1f);
+        controller.Tick(Vector2.zero, horizontalInput: -1f, climbInput: 0f);
+
+        Assert.AreEqual(PlayerMovementState.Grounded, controller.State);
+    }
+
+    [Test]
+    public void WallJump_StillWorksExactlyAsBefore_IndependentOfDetachByDirection()
+    {
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: -1f); // wall on the left
+        controller.Tick(Vector2.zero, 0f, 0f);
+
+        controller.SetEnvironment(grounded: false, touchingClimbable: true, wallDirection: -1f);
+        controller.QueueJump();
+        Vector2 velocity = controller.Tick(Vector2.zero, 0f, 0f);
+
+        Assert.AreEqual(PlayerMovementState.Airborne, controller.State);
+        Assert.AreEqual(7f, velocity.x, 0.0001f, "Wall-jump still gives its horizontal kick.");
+        Assert.AreEqual(9f, velocity.y, 0.0001f, "Wall-jump still gives its upward impulse.");
+    }
 }

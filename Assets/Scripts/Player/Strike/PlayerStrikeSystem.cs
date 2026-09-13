@@ -13,6 +13,12 @@ using UnityEngine;
 /// movement vs. encounter consequences) and deliberately NOT the Chef's instant-loss system:
 /// a strike here always keeps whatever remains in the stash after the loss and respawns the
 /// player, it never fully resets the level. Do not conflate the two.
+///
+/// <see cref="RegisterFall"/> is the other way in: <see cref="PlayerController"/> reports a
+/// completed fall distance, and a fall past <see cref="fallDamageThreshold"/> becomes a
+/// strike through the exact same <see cref="RegisterStrike"/> escalation as a citizen catch
+/// — this is the single place that decides "was that a punishable event", for falls and
+/// catches alike.
 /// </summary>
 [RequireComponent(typeof(WaffleWallet))]
 public class PlayerStrikeSystem : MonoBehaviour
@@ -28,6 +34,17 @@ public class PlayerStrikeSystem : MonoBehaviour
     [SerializeField, Min(0.01f)]
     [Tooltip("Presentation only: how long each flicker on/off phase lasts while invincible.")]
     private float flickerInterval = 0.12f;
+
+    [Header("Fall damage (PLACEHOLDER — needs feel-testing)")]
+    [SerializeField, Min(0f)]
+    [Tooltip("Falls at or under this distance are safe (no strike). Above it, a fall registers as a strike.")]
+    private float fallDamageThreshold = 8f;
+    [SerializeField, Min(0.01f)]
+    [Tooltip("Every this many units past the threshold adds +1 to the fall's hit-strength.")]
+    private float fallDamageScaleDistance = 4f;
+    [SerializeField, Min(1)]
+    [Tooltip("Upper bound on a single fall's hit-strength, so an extreme fall is never worse than the hardest citizen catch.")]
+    private int fallDamageMaxHitStrength = 3;
 
     private WaffleWallet wallet;
     private Rigidbody2D body; // optional: zeroed on respawn if present, so no fall/jump momentum carries over
@@ -123,6 +140,28 @@ public class PlayerStrikeSystem : MonoBehaviour
 
     /// <summary>Clears the strike count for a fresh level attempt. Not called by anything yet — wire this up alongside the Chef's instant-loss / level-restart once that system exists.</summary>
     public void ResetStrikes() => CurrentStrikeCount = 0;
+
+    /// <summary>
+    /// Registers a completed fall of <paramref name="fallDistance"/> units (see
+    /// <c>PlayerController</c>/<c>FallTracker</c>). Falls at or under
+    /// <see cref="fallDamageThreshold"/> do nothing. Beyond it, applies a strike through
+    /// <see cref="RegisterStrike"/> — same escalation, same respawn, same invincibility —
+    /// with a hit-strength of 1 that climbs by 1 for every <see cref="fallDamageScaleDistance"/>
+    /// units past the threshold, capped at <see cref="fallDamageMaxHitStrength"/>.
+    /// </summary>
+    public void RegisterFall(float fallDistance)
+    {
+        if (fallDistance <= fallDamageThreshold)
+        {
+            return;
+        }
+
+        float excess = fallDistance - fallDamageThreshold;
+        int hitStrength = 1 + Mathf.FloorToInt(excess / fallDamageScaleDistance);
+        hitStrength = Mathf.Clamp(hitStrength, 1, fallDamageMaxHitStrength);
+
+        RegisterStrike(hitStrength);
+    }
 
     private void ApplyStrikeLoss(int hitStrength)
     {

@@ -39,8 +39,24 @@ climbable.
     wall's side plus an upward impulse (`WallJumpVelocity`). Still works while dragging.
     A short "moving away from the wall" check stops the player instantly re-grabbing the
     wall they just left.
+  - **Holding run input away from the wall while climbing detaches with no impulse at
+    all** — an unassisted fall from wherever you let go, gravity taking over immediately.
+    Separate from wall-jump: this needs no jump press and gives no horizontal kick, just
+    lets go. The same "moving away from the wall" check that protects wall-jump from an
+    instant re-grab covers this case too, for free.
   - Leaving contact (or climbing off the top) hands control back to run/jump.
   Plain colliders are never climbable.
+- **Fixed: holding a direction into a plain (non-climbable) wall mid-air used to stick the
+  player in place instead of falling.** Root cause, confirmed by direct physics
+  measurement: this controller re-applies horizontal velocity into the `Rigidbody2D` every
+  `FixedUpdate` regardless of collisions, and Unity's *default* 2D collider friction is
+  non-zero — holding into a wall keeps re-creating a contact against it, and friction at
+  that same contact was also resisting the player's vertical *fall*, not just the
+  horizontal push. The player would hang frozen mid-fall against any solid surface, not
+  just climbable ones. Fixed by giving every player `Collider2D` a zero-friction
+  `PhysicsMaterial2D` in `PlayerController.Awake()`; climbing itself is driven entirely by
+  explicit velocity (see above), never friction, so this has no effect on climb feel — only
+  on incidental contact with non-climbable geometry.
 
 ### Player movement — balance questions (PLACEHOLDER, need sign-off)
 
@@ -125,6 +141,24 @@ citizen type is a new asset, never a new script.
   player's placed starting position for this scene). There's no dedicated level-start marker
   yet; if levels ever get mid-level checkpoints, this needs a real spawn-point component
   instead of "wherever you started."
+- **Fall damage feeds the same strike system as a citizen catch** (`PlayerStrikeSystem.RegisterFall`)
+  — falling is not a separate life-loss mechanic. `PlayerController` tracks the peak height
+  reached since the player last left the ground (`FallTracker`, a plain class mirroring the
+  `Tick`-driven pattern above) and reports the completed drop the instant the player lands.
+  Falls at or under `fallDamageThreshold` are free. Past it, `RegisterFall` calls
+  `RegisterStrike` — same ×1/×2/full-wipe escalation, same respawn, same invincibility window
+  as a catch, and a fall during invincibility is ignored exactly like a catch would be (an
+  emergent consequence of reusing `RegisterStrike` outright, not a separately-decided rule).
+  - **Only `Airborne` time counts.** Climbing — including deliberately climbing all the way
+    back down a wall — never accrues fall distance, even from a great height; grabbing a wall
+    mid-fall "catches" the fall with no penalty, and only the distance *after* letting go
+    again would count.
+  - **Hit-strength scales with how far past the threshold the fall was** — proposed formula,
+    not requested by name and flagged here for sign-off rather than silently assumed:
+    `hitStrength = clamp(1 + floor((fallDistance − threshold) / scaleDistance), 1, maxHitStrength)`.
+    That is, 1 hit-strength as soon as you're over the threshold, +1 for every further
+    `scaleDistance` units, capped at `maxHitStrength` so no single fall can be worse than the
+    hardest citizen catch (Guard, hit-strength 3).
 - **Climbing is opt-in per citizen type** via `CitizenTypeData.CanClimb` (a data flag, not a
   type check in `CitizenAI`) — currently only the Guard has it. A climbing citizen reuses the
   player's own `ClimbableSurface` marker + `ClimbableContactTracker` for "am I touching
@@ -155,6 +189,9 @@ final per direction, not to be re-guessed.
 |-------|-------------|-------|-------|
 | Respawn invincibility duration | 1.5 s | `PlayerStrikeSystem` | needs feel-testing sign-off |
 | Invincibility flicker interval | 0.12 s | `PlayerStrikeSystem` | presentation only, not balance |
+| Fall damage threshold | 8 units | `PlayerStrikeSystem` | falls at/under this are free; needs feel-testing sign-off |
+| Fall damage scale distance | 4 units | `PlayerStrikeSystem` | +1 hit-strength per this many units past the threshold; needs sign-off |
+| Fall damage max hit-strength | 3 | `PlayerStrikeSystem` | caps a fall at the Guard's hit-strength; needs sign-off |
 
 ### Other open questions
 

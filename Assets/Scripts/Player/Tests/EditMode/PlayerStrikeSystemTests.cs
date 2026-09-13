@@ -40,6 +40,15 @@ public class PlayerStrikeSystemTests
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
+    private void SetFallDamageConfig(float threshold, float scaleDistance, int maxHitStrength)
+    {
+        var so = new SerializedObject(strikeSystem);
+        so.FindProperty("fallDamageThreshold").floatValue = threshold;
+        so.FindProperty("fallDamageScaleDistance").floatValue = scaleDistance;
+        so.FindProperty("fallDamageMaxHitStrength").intValue = maxHitStrength;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
     [Test]
     public void FirstStrike_RemovesExactlyHitStrengthWaffles()
     {
@@ -229,5 +238,90 @@ public class PlayerStrikeSystemTests
         strikeSystem.RegisterStrike(1);
 
         Assert.IsFalse(strikeSystem.IsInvincible);
+    }
+
+    // ---- Fall damage ----
+
+    [Test]
+    public void FallAtOrUnderThreshold_RegistersNoStrikeAtAll()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+
+        strikeSystem.RegisterFall(8f); // exactly at the threshold -> safe
+
+        Assert.AreEqual(0, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(20, wallet.CurrentWaffleCount);
+    }
+
+    [Test]
+    public void FallJustPastThreshold_StrikesWithHitStrengthOne()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+
+        strikeSystem.RegisterFall(8.1f);
+
+        Assert.AreEqual(1, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(19, wallet.CurrentWaffleCount, "Strike 1 at hit-strength 1 removes exactly 1 waffle.");
+    }
+
+    [Test]
+    public void FallHitStrength_ScalesWithDistancePastTheThreshold()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 10);
+
+        // 8 (threshold) + 4*2 = 16 -> 8 units past threshold / 4 per step = +2 -> hitStrength 3.
+        strikeSystem.RegisterFall(16f);
+
+        Assert.AreEqual(1, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(17, wallet.CurrentWaffleCount, "Strike 1 at hit-strength 3 removes exactly 3 waffles.");
+    }
+
+    [Test]
+    public void FallHitStrength_IsCappedAtConfiguredMaximum()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+
+        strikeSystem.RegisterFall(1000f); // would scale far past 3 if uncapped
+
+        Assert.AreEqual(1, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(17, wallet.CurrentWaffleCount, "Strike 1 capped at hit-strength 3 removes exactly 3 waffles, not more.");
+    }
+
+    [Test]
+    public void FallStrike_UsesTheSameEscalationAsACitizenCatch()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+
+        strikeSystem.RegisterFall(8.1f);  // strike 1, hitStrength 1: -1 -> 19
+        strikeSystem.RegisterFall(8.1f);  // strike 2, hitStrength 1 x2: -2 -> 17
+        strikeSystem.RegisterFall(8.1f);  // strike 3: full wipe, regardless of hit-strength
+
+        Assert.AreEqual(3, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(0, wallet.CurrentWaffleCount);
+    }
+
+    [Test]
+    public void FallStrike_CountsTowardTheSameTotalAsACitizenCatch()
+    {
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+
+        strikeSystem.RegisterStrike(1);       // citizen catch: strike 1
+        strikeSystem.RegisterFall(8.1f);      // fall: strike 2
+        strikeSystem.RegisterStrike(2);       // citizen catch: strike 3 -> wipe
+
+        Assert.AreEqual(3, strikeSystem.CurrentStrikeCount);
+        Assert.AreEqual(0, wallet.CurrentWaffleCount);
+    }
+
+    [Test]
+    public void FallDuringInvincibility_IsIgnoredEntirely_SameAsACatch()
+    {
+        SetInvincibilityDuration(1.5f);
+        SetFallDamageConfig(threshold: 8f, scaleDistance: 4f, maxHitStrength: 3);
+        strikeSystem.RegisterStrike(1); // now invincible
+
+        strikeSystem.RegisterFall(50f); // should be fully ignored
+
+        Assert.AreEqual(1, strikeSystem.CurrentStrikeCount);
     }
 }
