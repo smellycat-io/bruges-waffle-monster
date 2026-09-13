@@ -15,6 +15,13 @@ public class PlayerStrikeSystemTests
         wallet = playerObject.AddComponent<WaffleWallet>();
         wallet.Initialize(20, 20);
         strikeSystem = playerObject.AddComponent<PlayerStrikeSystem>();
+
+        // A synchronous EditMode [Test] never pumps a frame between AddComponent and the test
+        // body, so Awake() does not reliably run on its own here (confirmed against the real
+        // Test Runner) — force it now, before anything below might move the transform, so
+        // spawnPosition is captured at the true starting position.
+        strikeSystem.EnsureInitialized();
+
         // Escalation-math tests below fire several strikes back-to-back with no time between
         // them; invincibility is covered separately, so it's off by default here.
         SetInvincibilityDuration(0f);

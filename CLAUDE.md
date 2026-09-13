@@ -267,6 +267,24 @@ test(s) in the same session/PR, not defer them.
 - Tests should fail loudly and specifically (assert the actual expected number,
   not just "no exception thrown") so a broken test tells you what's wrong, not
   just that something is.
+- **EditMode `[Test]` methods cannot rely on `Awake()`/`OnEnable()` having run** on a
+  MonoBehaviour added via `AddComponent` — a synchronous EditMode test never pumps a frame
+  between statements, so a component's lifecycle methods do not fire before the test body
+  runs (confirmed against the real Test Runner; this is different from PlayMode, which
+  actually enters Play mode, so `[UnityTest]` coroutines that `yield` don't have this
+  problem). If a MonoBehaviour's setup lives only in `Awake()`, give it a public, idempotent
+  method (e.g. `EnsureInitialized()`) that `Awake()` calls and that a test can call directly
+  right after `AddComponent` — see `PlayerStrikeSystem` for the pattern. Toggling
+  `gameObject.SetActive(false)` → configure → `SetActive(true)` does **not** fix this for
+  EditMode (verified); it's the right trick for PlayMode instead, where `Awake()` genuinely
+  fires the instant a serialized reference (e.g. a config asset) needs to already be set
+  before `AddComponent` returns.
+- Before trusting a passing test, remember whether it has ever actually been run against the
+  real NUnit Test Runner (Test Runner window, or `TestRunnerApi` outside Play mode) — manual
+  spot-checks via ad hoc scripts are not a substitute and have missed real bugs in this
+  project (a missing `Collider2D` on a test double, a `LayerMask` self-exclusion that
+  silently excluded every obstacle sharing the citizen's layer, the `Awake()` timing issue
+  above) that only surfaced once the actual suite finally ran.
 - This isn't about exhaustive coverage — it's about making sure the gameplay-
   balance math (the stuff that's easy to get subtly wrong and hard to notice by
   eyeballing the game) is verified automatically as the project grows.

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -28,7 +29,7 @@ public class CitizenAI : MonoBehaviour
 
     [Header("Perception")]
     [SerializeField]
-    [Tooltip("Colliders considered sight-blocking obstacles. This citizen's own layer is always excluded automatically, so the default (Everything) is usually fine.")]
+    [Tooltip("Colliders considered sight-blocking obstacles. This citizen's own collider is always excluded automatically (by identity, not by layer), so the default (Everything) is usually fine.")]
     private LayerMask sightMask = ~0;
 
     [Header("Placeholder visuals")]
@@ -46,6 +47,9 @@ public class CitizenAI : MonoBehaviour
     private readonly ClimbableContactTracker climbable = new ClimbableContactTracker();
     private bool isWalletDrained;
 
+    private ContactFilter2D sightFilter;
+    private readonly List<RaycastHit2D> sightHits = new List<RaycastHit2D>();
+
     /// <summary>Current behavior state. Reports Idle before wiring completes.</summary>
     public CitizenChaseState State => behavior.State;
 
@@ -55,6 +59,14 @@ public class CitizenAI : MonoBehaviour
         // Kinematic: this citizen is always moved explicitly via MovePosition, never by
         // physics forces/gravity — a dynamic body would fight the chase movement.
         body.bodyType = RigidbodyType2D.Kinematic;
+
+        // useTriggers=true so ClimbableSurface walls (triggers) still count as sight-blockers;
+        // self-exclusion is handled in HasLineOfSightOnTarget by comparing attachedRigidbody,
+        // NOT by layer — masking out gameObject.layer would also exclude every other obstacle
+        // that happens to share the citizen's layer (nothing in this project assigns citizens
+        // a dedicated layer, so that used to mean "nothing ever blocks sight" in practice).
+        sightFilter = new ContactFilter2D { useTriggers = true, useLayerMask = true };
+        sightFilter.SetLayerMask(sightMask);
 
         wallet = GetComponent<WaffleWallet>();
 
@@ -76,8 +88,6 @@ public class CitizenAI : MonoBehaviour
         {
             spriteRenderer.color = typeData.PlaceholderColor;
         }
-
-        sightMask &= ~(1 << gameObject.layer); // never treat our own collider as an obstacle
 
         if (target == null)
         {
@@ -182,10 +192,20 @@ public class CitizenAI : MonoBehaviour
             return false;
         }
 
-        RaycastHit2D hit = Physics2D.Raycast(origin, toTarget / distance, distance, sightMask);
-        // Nothing in the way before reaching the target, or the first thing the ray reaches
-        // IS the target -> clear line of sight. Anything else first -> blocked.
-        return hit.collider == null || hit.transform == target || hit.transform.IsChildOf(target);
+        int hitCount = Physics2D.Raycast(origin, toTarget / distance, sightFilter, sightHits, distance);
+        for (int i = 0; i < hitCount; i++)
+        {
+            Collider2D hitCollider = sightHits[i].collider;
+            if (hitCollider == null || hitCollider.attachedRigidbody == body)
+            {
+                continue; // ignore ourselves — results are nearest-first, so keep looking
+            }
+
+            // Nearest real (non-self) obstruction: clear only if it IS the target itself.
+            return hitCollider.transform == target || hitCollider.transform.IsChildOf(target);
+        }
+
+        return true; // nothing but (possibly) ourselves in the way within range
     }
 
     private void OnTriggerEnter2D(Collider2D other)

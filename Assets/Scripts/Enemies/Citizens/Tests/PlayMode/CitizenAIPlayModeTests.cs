@@ -44,6 +44,12 @@ public class CitizenAIPlayModeTests
         go.transform.position = position;
         spawned.Add(go);
 
+        // Inactive while wiring up: CitizenAI.Awake() runs the instant AddComponent<CitizenAI>()
+        // is called (Play mode is genuinely running here, unlike EditMode tests), so typeData
+        // must already be set before that happens or Awake sees it null, logs an error, and
+        // bails out — logging an unhandled error fails the test outright.
+        go.SetActive(false);
+
         go.AddComponent<Rigidbody2D>();
         var col = go.AddComponent<CapsuleCollider2D>();
         col.isTrigger = true;
@@ -54,6 +60,8 @@ public class CitizenAIPlayModeTests
         var so = new UnityEditor.SerializedObject(ai);
         so.FindProperty("typeData").objectReferenceValue = typeData;
         so.ApplyModifiedPropertiesWithoutUndo();
+
+        go.SetActive(true);
         return ai;
     }
 
@@ -222,12 +230,17 @@ public class CitizenAIPlayModeTests
         var player = new GameObject("Player");
         spawned.Add(player);
         player.transform.position = new Vector2(3f, 0f);
+        // Inactive while wiring up: PlayerController.Awake() runs the instant AddComponent is
+        // called, before Configure() below would otherwise get a chance to supply the config —
+        // same reasoning as CreateCitizen's SetActive dance.
+        player.SetActive(false);
         player.AddComponent<Rigidbody2D>();
         var wallet = player.AddComponent<WaffleWallet>();
         wallet.Initialize(10, 10);
         player.AddComponent<PlayerStrikeSystem>();
         var playerController = player.AddComponent<PlayerController>(); // the marker CitizenAI looks for
-        playerController.Configure(ScriptableObject.CreateInstance<PlayerMovementConfig>()); // avoid its "no config" error log
+        playerController.Configure(ScriptableObject.CreateInstance<PlayerMovementConfig>());
+        player.SetActive(true);
 
         var citizen = CreateCitizen(Vector2.zero); // SetTarget is never called
 

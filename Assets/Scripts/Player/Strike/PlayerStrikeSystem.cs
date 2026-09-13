@@ -33,6 +33,7 @@ public class PlayerStrikeSystem : MonoBehaviour
     private Rigidbody2D body; // optional: zeroed on respawn if present, so no fall/jump momentum carries over
     private Vector3 spawnPosition;
     private float invincibilityRemaining;
+    private bool initialized;
 
     /// <summary>Strikes taken this level attempt. Only <see cref="ResetStrikes"/> (a full level restart) clears it — a respawn after a strike does not.</summary>
     public int CurrentStrikeCount { get; private set; }
@@ -50,8 +51,26 @@ public class PlayerStrikeSystem : MonoBehaviour
     /// </summary>
     public event Action FullStashWiped;
 
-    private void Awake()
+    private void Awake() => EnsureInitialized();
+
+    /// <summary>
+    /// Captures the WaffleWallet/Rigidbody2D/SpriteRenderer references and the spawn position.
+    /// Idempotent — only the first call does anything.
+    ///
+    /// Called automatically from Awake. Also called defensively from <see cref="RegisterStrike"/>
+    /// and <see cref="Tick"/> because a synchronous EditMode [Test] never pumps a frame between
+    /// AddComponent and the test body — there's no "next frame" for a deferred Awake to run on,
+    /// so AddComponent alone does not reliably invoke Awake() in that context (confirmed against
+    /// the real Test Runner; PlayMode tests don't need this, they run inside actual Play mode).
+    /// </summary>
+    public void EnsureInitialized()
     {
+        if (initialized)
+        {
+            return;
+        }
+        initialized = true;
+
         wallet = GetComponent<WaffleWallet>();
         body = GetComponent<Rigidbody2D>();
         spawnPosition = transform.position;
@@ -71,6 +90,8 @@ public class PlayerStrikeSystem : MonoBehaviour
     /// </summary>
     public void Tick(float deltaTime)
     {
+        EnsureInitialized();
+
         if (invincibilityRemaining > 0f)
         {
             invincibilityRemaining = Mathf.Max(0f, invincibilityRemaining - deltaTime);
@@ -87,6 +108,8 @@ public class PlayerStrikeSystem : MonoBehaviour
     /// </summary>
     public void RegisterStrike(int hitStrength)
     {
+        EnsureInitialized();
+
         if (IsInvincible)
         {
             return;
