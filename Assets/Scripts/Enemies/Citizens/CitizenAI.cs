@@ -8,8 +8,9 @@ using UnityEngine;
 ///
 /// Responsibilities kept here (the "Unity glue"): line-of-sight raycasting, chase movement,
 /// catching the player (forwards to <see cref="PlayerStrikeSystem"/> rather than touching
-/// the player's wallet directly), and driving its own <see cref="WaffleWallet"/> +
-/// placeholder-tint visuals. The Idle/Chasing/Disengaged decision logic lives in
+/// the player's wallet directly), driving its own <see cref="WaffleWallet"/> +
+/// placeholder-tint visuals, and stepping toward whatever point <see cref="CitizenWanderController"/>
+/// currently wants while Idle. The Idle/Chasing/Disengaged decision logic lives in
 /// <see cref="CitizenBehaviorController"/>, mirroring the player's
 /// PlayerMovementController/PlayerController split.
 ///
@@ -45,6 +46,7 @@ public class CitizenAI : MonoBehaviour
     private PlayerStrikeSystem targetStrikeSystem;
     private readonly CitizenBehaviorController behavior = new CitizenBehaviorController();
     private readonly ClimbableContactTracker climbable = new ClimbableContactTracker();
+    private CitizenWanderController wander;
     private bool isWalletDrained;
 
     private ContactFilter2D sightFilter;
@@ -83,6 +85,8 @@ public class CitizenAI : MonoBehaviour
 
         int rolledWalletSize = typeData.RollWalletSize();
         wallet.Initialize(rolledWalletSize, rolledWalletSize);
+
+        wander = new CitizenWanderController(body.position, typeData.WanderRadius, typeData.WanderPauseDuration);
 
         if (spriteRenderer != null)
         {
@@ -128,6 +132,7 @@ public class CitizenAI : MonoBehaviour
         }
 
         behavior.Tick(HasLineOfSightOnTarget(), isWalletDrained);
+        wander.Tick(behavior.State == CitizenChaseState.Idle, body.position.x, Time.fixedDeltaTime);
         ApplyState();
     }
 
@@ -135,6 +140,9 @@ public class CitizenAI : MonoBehaviour
     {
         switch (behavior.State)
         {
+            case CitizenChaseState.Idle:
+                WanderTowardTarget();
+                break;
             case CitizenChaseState.Chasing:
                 ChaseTarget();
                 break;
@@ -145,6 +153,18 @@ public class CitizenAI : MonoBehaviour
                 }
                 break;
         }
+    }
+
+    /// <summary>Steps toward <see cref="CitizenWanderController"/>'s current wander point, clamped so it lands exactly on arrival instead of oscillating past it (see CitizenWanderController's arrival check).</summary>
+    private void WanderTowardTarget()
+    {
+        if (!wander.CurrentTargetX.HasValue)
+        {
+            return; // paused between wander points
+        }
+
+        float nextX = Mathf.MoveTowards(body.position.x, wander.CurrentTargetX.Value, typeData.WanderSpeed * Time.fixedDeltaTime);
+        body.MovePosition(new Vector2(nextX, body.position.y));
     }
 
     private void ChaseTarget()

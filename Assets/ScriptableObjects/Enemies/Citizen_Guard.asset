@@ -17,5 +17,8 @@ MonoBehaviour:
   hitStrength: 3
   moveSpeed: 5
   detectionRange: 7
+  wanderRadius: 4
+  wanderSpeed: 2
+  wanderPauseDuration: 1.5
   canClimb: 1
   placeholderColor: {r: 0.2, g: 0.3, b: 0.75, a: 1}

@@ -7,7 +7,10 @@ using NUnit.Framework;
 /// <summary>
 /// Integration coverage for <see cref="CitizenAI"/> against real Physics2D raycasts and
 /// real trigger contacts: line-of-sight starting/stopping the chase based on obstruction,
-/// and catching the player actually triggering a strike.
+/// catching the player actually triggering a strike, and Idle wander actually moving a real
+/// Rigidbody2D over real FixedUpdate steps (the pure timing/random-point logic itself is
+/// covered exhaustively in EditMode by CitizenWanderControllerTests — this file only checks
+/// the physics-dependent wiring and that wander never delays a chase starting).
 /// </summary>
 public class CitizenAIPlayModeTests
 {
@@ -107,6 +110,15 @@ public class CitizenAIPlayModeTests
     {
         var so = new UnityEditor.SerializedObject(typeData);
         so.FindProperty("canClimb").boolValue = value;
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    private void SetWanderConfig(float radius, float speed, float pauseDuration)
+    {
+        var so = new UnityEditor.SerializedObject(typeData);
+        so.FindProperty("wanderRadius").floatValue = radius;
+        so.FindProperty("wanderSpeed").floatValue = speed;
+        so.FindProperty("wanderPauseDuration").floatValue = pauseDuration;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
@@ -247,6 +259,38 @@ public class CitizenAIPlayModeTests
         yield return FixedSteps(3);
 
         Assert.AreEqual(CitizenChaseState.Chasing, citizen.State, "Should auto-discover the PlayerController and chase it.");
+    }
+
+    // ---- Idle wander ----
+
+    [UnityTest]
+    public IEnumerator IdleCitizen_WandersAwayFromSpawn_StayingWithinTheConfiguredRadius()
+    {
+        SetWanderConfig(radius: 2f, speed: 3f, pauseDuration: 10f); // long pause so it won't loop back mid-test
+        var citizen = CreateCitizen(Vector2.zero); // no target set -> can never gain line-of-sight, stays Idle
+
+        float startX = citizen.transform.position.x;
+        yield return FixedSteps(30);
+
+        Assert.AreEqual(CitizenChaseState.Idle, citizen.State);
+        Assert.AreNotEqual(startX, citizen.transform.position.x, "An Idle citizen with wanderSpeed > 0 should actually be moving via real Rigidbody2D.MovePosition.");
+        Assert.LessOrEqual(Mathf.Abs(citizen.transform.position.x - startX), 2f + 0.01f, "Wander must never carry the citizen outside its configured radius of spawn.");
+    }
+
+    [UnityTest]
+    public IEnumerator WanderingCitizen_StillEntersChasingImmediately_OnceLineOfSightIsGained()
+    {
+        SetWanderConfig(radius: 5f, speed: 3f, pauseDuration: 10f);
+        var target = CreateTarget(new Vector2(5f, 0f), withStrikeSystem: false);
+        var citizen = CreateCitizen(Vector2.zero);
+
+        yield return FixedSteps(3); // wandering, but SetTarget hasn't been called yet
+        Assert.AreEqual(CitizenChaseState.Idle, citizen.State);
+
+        citizen.SetTarget(target.transform);
+        yield return FixedSteps(3);
+
+        Assert.AreEqual(CitizenChaseState.Chasing, citizen.State, "Gaining line of sight while wandering must still start the chase immediately — wander must never delay it.");
     }
 
     // ---- Guard-only climbing (CitizenTypeData.CanClimb) ----

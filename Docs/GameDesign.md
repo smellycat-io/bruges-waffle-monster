@@ -111,6 +111,34 @@ citizen type is a new asset, never a new script.
 - **Chase movement is grounded and horizontal-only** (citizens don't climb or match the
   player's height) — a deliberate choice so climbing stays a real escape route. Not
   explicitly requested; flagging in case full 2D pursuit was actually intended.
+- **Idle wander**: while Idle (not Chasing, not Disengaged), a citizen wanders randomly
+  within `WanderRadius` of its own spawn point rather than standing still — pick a random
+  point, walk to it at `WanderSpeed`, pause `WanderPauseDuration` seconds, repeat.
+  - **Horizontal-only, same reasoning as chase**: citizens are gravity-less kinematic
+    bodies (see above), so a vertical wander offset would leave one permanently floating —
+    wander only ever picks a new x position, never y.
+  - **Lives in the existing split, not a new parallel system**: `CitizenWanderController`
+    is a new plain class (no MonoBehaviour, no `Time.x` reads), but it's owned and ticked
+    by `CitizenAI` exactly the way `ClimbableContactTracker` and `CitizenBehaviorController`
+    already are — same single `FixedUpdate`, same "plain class decides, MonoBehaviour
+    glue moves the Rigidbody2D" split used everywhere else in this codebase. `ApplyState`'s
+    existing per-state switch just gained an `Idle` case (`WanderTowardTarget`) alongside
+    the existing `Chasing`/`Disengaged` ones.
+  - **Stops the instant Chasing starts, resumes fresh (not from spawn) the instant Chasing
+    ends**: `CitizenWanderController.Tick` is fed `isActive = (state == Idle)` every tick
+    regardless of state, so going inactive clears any in-progress target immediately (no
+    delay to chase responsiveness — movement is picked by the same switch statement, so
+    there's no way for wander and chase to run the same tick), and reactivating discards
+    any stale target/pause and picks a fresh point right away from wherever the citizen
+    currently is. The radius is still measured from the *original* spawn point, not
+    wherever the chase ended — a citizen chased far from home wanders back toward its own
+    territory rather than adopting a new one.
+  - **Wander speed is its own `CitizenTypeData` field, not a hardcoded fraction of
+    `MoveSpeed`** — so a designer can tune each type's wander pace independently of its
+    chase speed without touching code (e.g. a Vendor that barely strays from its stall but
+    still chases at a normal clip). `WanderRadius` and `WanderPauseDuration` are likewise
+    per-type fields, since a Guard patrolling wider than a Tourist window-shopping is a
+    plausible personality difference worth exposing to feel-testing, not baking in.
 - **Catching the player** (trigger contact while Chasing) calls `PlayerStrikeSystem.RegisterStrike`
   on the player — `CitizenAI` never touches the player's wallet directly. A Disengaged
   (crying) citizen can't catch the player even on contact.
@@ -184,6 +212,17 @@ Speeds are chosen relative to the player's 6 u/s run speed (Guard deliberately s
 below it — outrunnable in a straight sprint, but only barely). Detection ranges are a first
 guess with no real reference point. Both need feel-testing; wallet size and hit strength are
 final per direction, not to be re-guessed.
+
+| Type | Wander radius (PLACEHOLDER) | Wander speed (PLACEHOLDER) | Wander pause (PLACEHOLDER) |
+|------|------------------------------|------------------------------|-------------------------------|
+| Tourist | 3 u | 1 u/s | 2.5 s |
+| Vendor  | 2.5 u | 1.5 u/s | 3 s |
+| Guard   | 4 u | 2 u/s | 1.5 s |
+
+First-pass personality guesses, not balance-critical like wallet/hit-strength: Vendor stays
+closest to its stall but pauses longest (tending it); Guard patrols the widest area at the
+briskest pace but pauses shortest (steady patrol vs. window-shopping/browsing). All three
+columns need feel-testing sign-off same as move speed/detection range above.
 
 | Value | Placeholder | Where | Notes |
 |-------|-------------|-------|-------|

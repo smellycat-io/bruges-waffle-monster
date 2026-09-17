@@ -22,6 +22,14 @@ public class CitizenTypeData : ScriptableObject
     [Tooltip("Max line-of-sight raycast distance. Beyond this, the citizen can't see the player regardless of obstruction.")]
     [SerializeField, Min(0f)] private float detectionRange;
 
+    [Header("Idle wander (PLACEHOLDER — needs feel-testing)")]
+    [Tooltip("How far from its spawn point this citizen wanders while Idle.")]
+    [SerializeField, Min(0f)] private float wanderRadius;
+    [Tooltip("Movement speed while wandering (Idle). A separate field rather than a fraction of MoveSpeed so each type's wander pace can be tuned independently of its chase speed — typically slower, but not hardcoded as such.")]
+    [SerializeField, Min(0f)] private float wanderSpeed;
+    [Tooltip("How long this citizen pauses at each wander point before picking a new one.")]
+    [SerializeField, Min(0f)] private float wanderPauseDuration;
+
     [Header("Abilities")]
     [Tooltip("Whether this type follows the player onto ClimbableSurface geometry (simple vertical pursuit at MoveSpeed) instead of staying strictly grounded/horizontal. Data-driven so any future type can opt in without touching CitizenAI.")]
     [SerializeField] private bool canClimb;
@@ -35,6 +43,9 @@ public class CitizenTypeData : ScriptableObject
     public int HitStrength => hitStrength;
     public float MoveSpeed => moveSpeed;
     public float DetectionRange => detectionRange;
+    public float WanderRadius => wanderRadius;
+    public float WanderSpeed => wanderSpeed;
+    public float WanderPauseDuration => wanderPauseDuration;
     public bool CanClimb => canClimb;
     public Color PlaceholderColor => placeholderColor;
 
