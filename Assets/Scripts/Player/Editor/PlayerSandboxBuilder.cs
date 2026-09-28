@@ -7,13 +7,17 @@ using UnityEngine.UI;
 namespace BrugesWaffleMonster.Editor
 {
     /// <summary>
-    /// One-shot editor helper that drops a throwaway, art-free sandbox into the open scene
-    /// so player movement can be exercised in Play mode: a placeholder monster (with the
-    /// tap-zone run/jump driver and the drag-to-climb driver), a floor, and two climbable
-    /// walls. Nothing here ships in a build.
+    /// One-shot editor helpers that drop throwaway, art-free test scaffolding into the open
+    /// scene so gameplay can be exercised in Play mode. Nothing here ships in a build.
     ///
-    /// Run it from <b>Tools ▸ Bruges Waffle Monster ▸ Build Player Movement Sandbox</b>.
-    /// It refuses to run twice (delete the "PlayerMovementSandbox" object to regenerate).
+    /// Two independent menu items, both under <b>Tools ▸ Bruges Waffle Monster</b>:
+    /// - <b>Build Player Movement Sandbox</b>: a placeholder monster (with its tap-zone
+    ///   run/jump driver, drag-to-climb driver, waffle wallet, and strike/respawn handling),
+    ///   a floor, and two climbable walls.
+    /// - <b>Build Citizen Sandbox</b>: a few of each citizen type plus an obstacle for
+    ///   line-of-sight testing. Requires the player sandbox to already exist.
+    ///
+    /// Each refuses to run twice (delete its root object to regenerate it).
     /// </summary>
     public static class PlayerSandboxBuilder
     {
@@ -21,6 +25,14 @@ namespace BrugesWaffleMonster.Editor
         private const string RootName = "PlayerMovementSandbox";
         private const string ConfigDir = "Assets/ScriptableObjects/Player";
         private const string ConfigAssetPath = ConfigDir + "/PlayerMovementConfig.asset";
+
+        // PLACEHOLDER: the player's starting waffle stash for sandbox play-testing only.
+        // Real starting capacity/count is an open balance question, not decided by this branch.
+        private const int SandboxPlayerWalletCapacity = 20;
+
+        private const string CitizenMenuPath = "Tools/Bruges Waffle Monster/Build Citizen Sandbox";
+        private const string CitizenRootName = "CitizenSandbox";
+        private const string CitizenAssetDir = "Assets/ScriptableObjects/Enemies";
 
         [MenuItem(MenuPath)]
         public static void Build()
@@ -73,6 +85,73 @@ namespace BrugesWaffleMonster.Editor
         [MenuItem(MenuPath, isValidateFunction: true)]
         private static bool ValidateBuild() => !EditorApplication.isPlayingOrWillChangePlaymode;
 
+        [MenuItem(CitizenMenuPath)]
+        public static void BuildCitizens()
+        {
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                Debug.LogWarning("Leave Play mode before building the citizen sandbox.");
+                return;
+            }
+
+            Scene scene = SceneManager.GetActiveScene();
+            if (!scene.IsValid())
+            {
+                Debug.LogWarning("Open a scene before building the citizen sandbox.");
+                return;
+            }
+
+            if (Object.FindAnyObjectByType<CitizenAI>() != null)
+            {
+                Debug.LogWarning($"Scene already contains a {nameof(CitizenAI)} — sandbox not rebuilt. " +
+                                 $"Delete the '{CitizenRootName}' object to regenerate it.");
+                return;
+            }
+
+            if (Object.FindAnyObjectByType<PlayerController>() == null)
+            {
+                Debug.LogWarning("No player in the scene yet — run 'Build Player Movement Sandbox' first " +
+                                 "(citizens need a PlayerController + PlayerStrikeSystem to chase/catch).");
+                return;
+            }
+
+            var tourist = LoadCitizenType("Citizen_Tourist");
+            var vendor = LoadCitizenType("Citizen_Vendor");
+            var guard = LoadCitizenType("Citizen_Guard");
+            if (tourist == null || vendor == null || guard == null)
+            {
+                Debug.LogWarning($"Missing a CitizenTypeData asset under {CitizenAssetDir} — citizen sandbox not built.");
+                return;
+            }
+
+            Sprite sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+
+            var root = new GameObject(CitizenRootName);
+            Undo.RegisterCreatedObjectUndo(root, "Build Citizen Sandbox");
+
+            const float groundY = -1.85f; // citizens are kinematic (no gravity) -> placed exactly at ground level
+            BuildObstacle(root.transform, new Vector2(2.5f, -1f), new Vector2(1.5f, 3f), sprite);
+
+            BuildCitizen(root.transform, "Tourist_A", tourist, new Vector2(-4f, groundY), sprite);
+            BuildCitizen(root.transform, "Tourist_B", tourist, new Vector2(9f, groundY), sprite);
+            BuildCitizen(root.transform, "Vendor_A", vendor, new Vector2(-8f, groundY), sprite);
+            BuildCitizen(root.transform, "Vendor_B", vendor, new Vector2(7f, groundY), sprite);
+            BuildCitizen(root.transform, "Guard_A", guard, new Vector2(5f, groundY), sprite);
+            BuildCitizen(root.transform, "Guard_B", guard, new Vector2(-9.5f, groundY), sprite);
+
+            Selection.activeGameObject = root;
+            EditorSceneManager.MarkSceneDirty(scene);
+            Debug.Log("Citizen sandbox built: 2 Tourists (yellow), 2 Vendors (orange), 2 Guards (blue), plus an " +
+                      "opaque obstacle block near the Guard at x=5 for line-of-sight testing — duck behind it to " +
+                      "break the chase.");
+        }
+
+        [MenuItem(CitizenMenuPath, isValidateFunction: true)]
+        private static bool ValidateBuildCitizens() => !EditorApplication.isPlayingOrWillChangePlaymode;
+
+        private static CitizenTypeData LoadCitizenType(string assetName)
+            => AssetDatabase.LoadAssetAtPath<CitizenTypeData>($"{CitizenAssetDir}/{assetName}.asset");
+
         private static void BuildPlayer(Transform parent, PlayerMovementConfig config, Sprite sprite)
         {
             var go = new GameObject("Player");
@@ -99,6 +178,10 @@ namespace BrugesWaffleMonster.Editor
             var zoneInput = go.AddComponent<ScreenTapZoneInput>();
             var climbInput = go.AddComponent<ClimbDragInput>();
             var player = go.AddComponent<PlayerController>();
+
+            var wallet = go.AddComponent<WaffleWallet>();
+            wallet.Initialize(SandboxPlayerWalletCapacity, SandboxPlayerWalletCapacity);
+            go.AddComponent<PlayerStrikeSystem>();
 
             var zoneSo = new SerializedObject(zoneInput);
             zoneSo.FindProperty("target").objectReferenceValue = tapInput;
@@ -139,6 +222,39 @@ namespace BrugesWaffleMonster.Editor
 
             go.AddComponent<ClimbableSurface>();
             AddVisual(go.transform, sprite, new Vector2(0.8f, 6f), new Color(0.35f, 0.55f, 0.95f, 0.5f), sortingOrder: 5);
+        }
+
+        private static void BuildCitizen(Transform parent, string name, CitizenTypeData typeData, Vector2 position, Sprite sprite)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent);
+            go.transform.position = position;
+
+            go.AddComponent<Rigidbody2D>(); // CitizenAI forces this kinematic itself in Awake
+
+            var col = go.AddComponent<CapsuleCollider2D>();
+            col.direction = CapsuleDirection2D.Vertical;
+            col.size = new Vector2(0.8f, 1.3f);
+            col.isTrigger = true; // catching the player is a trigger event, not a solid shove
+
+            go.AddComponent<WaffleWallet>(); // CitizenAI rolls + initializes this from typeData in Awake
+
+            AddVisual(go.transform, sprite, new Vector2(0.8f, 1.3f), typeData.PlaceholderColor, sortingOrder: 9);
+
+            var ai = go.AddComponent<CitizenAI>();
+            var so = new SerializedObject(ai);
+            so.FindProperty("typeData").objectReferenceValue = typeData;
+            so.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        private static void BuildObstacle(Transform parent, Vector2 position, Vector2 size, Sprite sprite)
+        {
+            var go = new GameObject("Placeholder_Obstacle");
+            go.transform.SetParent(parent);
+            go.transform.position = position;
+
+            go.AddComponent<BoxCollider2D>().size = size; // solid, non-trigger -> blocks citizen line-of-sight
+            AddVisual(go.transform, sprite, size, new Color(0.45f, 0.4f, 0.38f), sortingOrder: 6);
         }
 
         private static void AddVisual(Transform parent, Sprite sprite, Vector2 worldSize, Color color, int sortingOrder)

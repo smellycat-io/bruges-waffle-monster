@@ -15,6 +15,10 @@ using UnityEngine;
 /// - Pressing JUMP wall-jumps: the player kicks off into <see cref="PlayerMovementState.Airborne"/>
 ///   with a horizontal push away from the wall plus an upward impulse
 ///   (<see cref="IPlayerMovementConfig.WallJumpVelocity"/>).
+/// - Holding the run direction AWAY from the wall (opposite <c>wallDirection</c>) instead
+///   detaches with no impulse at all — an unassisted fall from whatever vertical velocity
+///   climbing had at that moment, gravity taking over from there. This is separate from
+///   wall-jump (which still needs the jump input and still gives its horizontal kick).
 /// </summary>
 public sealed class PlayerMovementController
 {
@@ -78,7 +82,7 @@ public sealed class PlayerMovementController
         bool wallJump = jumpQueued && State == PlayerMovementState.Climbing;
         jumpQueued = false;
 
-        State = ResolveNextState(currentVelocity, groundJump, wallJump);
+        State = ResolveNextState(currentVelocity, horizontalInput, groundJump, wallJump);
 
         switch (State)
         {
@@ -107,7 +111,7 @@ public sealed class PlayerMovementController
         }
     }
 
-    private PlayerMovementState ResolveNextState(Vector2 currentVelocity, bool groundJump, bool wallJump)
+    private PlayerMovementState ResolveNextState(Vector2 currentVelocity, float horizontalInput, bool groundJump, bool wallJump)
     {
         if (wallJump)
         {
@@ -116,11 +120,17 @@ public sealed class PlayerMovementController
 
         if (isTouchingClimbable)
         {
-            // Contact grabs the wall automatically — except immediately after a wall-jump,
-            // when we're airborne and still moving away from it (stops an instant re-grab).
+            // Contact grabs (and holds) the wall automatically, except:
+            // - right after a wall-jump, while airborne and still moving away from it
+            //   (stops an instant re-grab), or
+            // - while already climbing and holding a direction away from the wall side —
+            //   an intentional, unassisted let-go (no jump impulse, just release).
             bool kickingAwayFromWall = State == PlayerMovementState.Airborne
                 && currentVelocity.x * wallDirection < -Deadzone;
-            if (!kickingAwayFromWall)
+            bool lettingGoWhileClimbing = State == PlayerMovementState.Climbing
+                && horizontalInput * wallDirection < -Deadzone;
+
+            if (!kickingAwayFromWall && !lettingGoWhileClimbing)
             {
                 return PlayerMovementState.Climbing;
             }
@@ -129,7 +139,8 @@ public sealed class PlayerMovementController
         switch (State)
         {
             case PlayerMovementState.Climbing:
-                // Left the surface or climbed off the top: hand control back to run/jump.
+                // Left the surface, let go on purpose, or climbed off the top: hand control
+                // back to run/jump.
                 return isGrounded ? PlayerMovementState.Grounded : PlayerMovementState.Airborne;
 
             case PlayerMovementState.Grounded:
