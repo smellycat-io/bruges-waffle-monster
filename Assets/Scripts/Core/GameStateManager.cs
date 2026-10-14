@@ -1,4 +1,7 @@
 using UnityEngine;
+#if ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 public class GameStateManager : MonoBehaviour
 {
@@ -53,6 +56,15 @@ public class GameStateManager : MonoBehaviour
         TransitionTo(new ArenaState());
     }
 
+    /// <summary>
+    /// Debug-only 1/2/3 state transitions for manual testing. Reads whichever backend is
+    /// actually active (Project Settings ▸ Player ▸ Active Input Handling) rather than the
+    /// legacy <c>UnityEngine.Input</c> class directly — that class throws
+    /// <see cref="System.InvalidOperationException"/> the instant it's touched when Active
+    /// Input Handling is set to "Input System Package (New)" only, which this project uses
+    /// (see <c>TapPlayerInput.KeyboardHorizontal</c>/<c>KeyboardClimb</c> for the same pattern
+    /// already established elsewhere in this codebase).
+    /// </summary>
     private void HandleDebugStateKeys()
     {
         if (!enableDebugStateKeys)
@@ -60,6 +72,26 @@ public class GameStateManager : MonoBehaviour
             return;
         }
 
+#if ENABLE_INPUT_SYSTEM
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null)
+        {
+            return;
+        }
+
+        if (keyboard.digit1Key.wasPressedThisFrame)
+        {
+            TransitionToRunner();
+        }
+        else if (keyboard.digit2Key.wasPressedThisFrame)
+        {
+            TransitionToKitchenApproach();
+        }
+        else if (keyboard.digit3Key.wasPressedThisFrame)
+        {
+            TransitionToArena();
+        }
+#elif ENABLE_LEGACY_INPUT_MANAGER
         if (Input.GetKeyDown(KeyCode.Alpha1))
         {
             TransitionToRunner();
@@ -72,5 +104,6 @@ public class GameStateManager : MonoBehaviour
         {
             TransitionToArena();
         }
+#endif
     }
 }
