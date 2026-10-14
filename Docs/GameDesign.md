@@ -246,5 +246,82 @@ columns need feel-testing sign-off same as move speed/detection range above.
   spotted them in the first place.
 - The player's sandbox starting wallet (20 waffles, in `PlayerSandboxBuilder`) is a
   play-testing convenience, not a real starting-stash balance decision.
-- Chef known-return windows, random-return probability, bedtime, blink-rate curve, and fake-out frequency.
+- ~~Chef known-return windows, random-return probability, bedtime, blink-rate curve, and
+  fake-out frequency~~ — resolved below (Chef Schedule & Warning System).
 - Waffle removal scaling beyond the current direct hit-strength prototype.
+
+## Chef Schedule & Warning System (feature/chef-warning-system)
+
+The Chef cycles between **Away** from the kitchen hot zone (safe) and **Present** in it
+(an instant, total level restart if the player is caught inside), plus a one-time,
+extended **Bedtime** safe window late in the level. Three independently-testable warning
+components — Security Monitor (blink), Silhouette, Audio Cue — all read the same
+`ChefController`/`ChefScheduleController`, but differ in reliability. This runs as its own
+parallel state machine (`ChefScheduleController`, a plain class ticked by `ChefController`),
+**not** an `IGameState` — it keeps ticking regardless of Runner/Kitchen-Approach/Arena.
+
+- **Schedule semantics** (interpreting the placeholder `ChefScheduleData` fields — flagged
+  rather than assumed silently): `knownReturnWindows` is a list of (min, max) away-duration
+  ranges, cycled in order and looped — each away period's actual length is randomly drawn
+  from whichever range is current. This is the "learnable rhythm" half. `randomReturnProbability`
+  (rolled per second while safely Away) can start a real return countdown early, unpredictably
+  — the "breaks the pattern" half. Either path starts the same `returnWarningLeadTime`-long
+  countdown before the Chef actually becomes Present.
+- **Bedtime** is an elapsed-level-time threshold (`bedtime`), not a duration — the first Away
+  period that would otherwise start after that point becomes one extended `bedtimeDuration`-long
+  safe window instead. **Decision: after bedtime ends, normal cycling resumes** (the
+  alternative — staying safe for the rest of the level — was considered and declined).
+- **Added fields** not in the original placeholder SO, needed to make the schedule actually
+  loop/behave, all PLACEHOLDER: `returnWarningLeadTime`, `presentDuration` (how long the Chef
+  stays Present before leaving again — not called out explicitly in the original note but
+  required for the cycle to continue), `bedtimeDuration`, `fakeOutRampDuration`,
+  `fakeOutPeakRange` (a fake-out ramps to a random peak in this 0–1 range, never guaranteed to
+  look like a full/imminent real return, then resets — never assumed reset vs. hold-at-peak
+  either way, decided as reset), `arenaEntryCountdownExtension`.
+- **Security Monitor** (`SecurityMonitorWarning` + `BlinkRateCalculator`): blink rate follows
+  `blinkRateCurve` evaluated at `ChefController.BlinkRampProgress01` — a single 0–1 ramp signal
+  that looks identical whether it's driven by a real return countdown or a fake-out. This
+  component has no way to distinguish the two, by design. Fake-out frequency is
+  `fakeOutFrequency` (average per minute) converted to a per-second probability, rolled only
+  while safely Away with no countdown already active.
+- **Silhouette** (`SilhouetteWarning`): fires only on `ChefScheduleController.RealReturnMidpointReached`
+  — an event the schedule guarantees never fires during a fake-out and always fires exactly
+  once per real countdown, at its midpoint. The one signal the player can always trust.
+- **Audio Cue** (`AudioCueWarning`): volume/pitch ramp with proximity to an actual return
+  (`ComputeProximity`, a pure/static method for testability), same reliability as the
+  Silhouette. **Decision: no audio fake-out** — a subtle audio fake-out was raised as an
+  option and declined for this pass; only the blink layer is ever unreliable.
+- **Kitchen hot zone**: a new concept, not previously in this doc. `KitchenHotZone` is a
+  trigger-collider marker (placed on level geometry, mirroring `ClimbableSurface`) reporting
+  player enter/exit to `ChefEncounter`, which alone decides the consequence. Being inside it
+  the instant the Chef is/becomes Present (`ChefEncounter`) reloads the whole scene — no
+  partial-reset plumbing needed anywhere else, since everything (wallet, strikes, citizen
+  state, the Chef's own schedule) comes back fresh because the scene does. Deliberately
+  separate from `PlayerStrikeSystem`'s respawn-with-remainder flow; does not call
+  `PlayerStrikeSystem.ResetStrikes()` since a scene reload makes that redundant.
+- **Kitchen door** (`KitchenDoorTrigger`): reaching it while the Chef is away (including
+  mid-return-warning or Bedtime) calls `GameStateManager.TransitionToArena()`. The Arena
+  itself is a same-scene room (`ArenaRoomMarker`, starts inactive, toggled by `ArenaState`)
+  rather than a separately loaded scene — no scene-loading infrastructure exists in this
+  project yet, and building one was out of scope here. Contains only a `WaffleIronMarker`
+  positional placeholder — no attack timing, damage, or fight logic (explicitly out of scope
+  for this branch).
+- **Arena entry timer extension**: the moment `ArenaState.Enter()` runs, it adds
+  `arenaEntryCountdownExtension` seconds to the Chef's current/next return countdown via
+  `ChefController.ExtendReturnCountdown` — chosen over pausing the schedule outright, per the
+  brief, so the Waffle Iron fight has breathing room without removing the threat entirely.
+
+### Chef schedule — all PLACEHOLDER, needs feel-testing
+
+| Value | Placeholder | Notes |
+|-------|-------------|-------|
+| Known away-duration ranges | not set (empty) | needs at least one (min,max) range authored per level before this does anything meaningful |
+| Random early-return probability | 0/s | per-second chance during a safe Away stretch |
+| Return warning lead time | 4 s | length of every real return countdown |
+| Present duration | 8 s | how long the Chef stays in the hot zone before leaving again |
+| Bedtime start | 0 s | elapsed level-time threshold; 0 effectively disables bedtime until authored |
+| Bedtime duration | 30 s | length of the extended safe window |
+| Fake-out frequency | 2/min | average fake-out ramps per minute while safely Away |
+| Fake-out ramp duration | 2 s | time to rise to its (random) peak before resetting |
+| Fake-out peak range | 0.3–0.9 | a fake-out never guarantees full ramp intensity |
+| Arena entry countdown extension | 15 s | added to the Chef's return countdown the instant the Arena begins |
